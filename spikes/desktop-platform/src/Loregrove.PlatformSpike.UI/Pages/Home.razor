@@ -1,0 +1,27 @@
+@page "/"
+@inject IPlatformSpikeService SpikeService
+
+<PageIntro Title="Your knowledge, connected" Description="A shared Fluent UI surface hosted directly in MAUI—without HTTP, REST, or a local server." />
+<div class="card-grid">
+    <FluentCard class="page-card hero-card">
+        <h2>Architecture probe</h2><p>Razor calls an application-style C# service in process. Start the operation to verify progress callbacks.</p>
+        <FluentButton Appearance="ButtonAppearance.Primary" Disabled="@_running" @onclick="RunOperationAsync">Run C# operation</FluentButton>
+        <FluentProgressBar Min="0" Max="100" Value="@_progress" /><p aria-live="polite">@_status</p>
+    </FluentCard>
+    <FluentCard class="page-card metric-card"><strong>10,000</strong><span>synthetic library records</span></FluentCard>
+    <FluentCard class="page-card metric-card"><strong>100 / 300</strong><span>graph nodes / edges</span></FluentCard>
+    <FluentCard class="page-card metric-card"><strong>1</strong><span>shared Razor UI project</span></FluentCard>
+</div>
+
+@code {
+    private int _progress;
+    private bool _running;
+    private string _status = "Ready.";
+    private async Task RunOperationAsync()
+    {
+        _running = true; _status = "Processing in C#…";
+        var progress = new Progress<int>(value => { _progress = value; InvokeAsync(StateHasChanged); });
+        _status = await SpikeService.RunDemoOperationAsync(progress, CancellationToken.None);
+        _running = false;
+    }
+}

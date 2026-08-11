@@ -1,0 +1,41 @@
+name: Desktop platform spike
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "spikes/desktop-platform/**"
+      - ".github/workflows/desktop-platform-spike.yml"
+  pull_request:
+    paths:
+      - "spikes/desktop-platform/**"
+      - ".github/workflows/desktop-platform-spike.yml"
+
+jobs:
+  windows:
+    runs-on: windows-2025
+    defaults:
+      run:
+        working-directory: spikes/desktop-platform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: spikes/desktop-platform/global.json
+      - run: dotnet workload install maui
+      - run: dotnet test tests/Loregrove.PlatformSpike.Tests/Loregrove.PlatformSpike.Tests.csproj -c Release
+      - run: dotnet build src/Loregrove.PlatformSpike.Desktop/Loregrove.PlatformSpike.Desktop.csproj -f net10.0-windows10.0.19041.0 -c Release
+
+  mac-catalyst:
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: spikes/desktop-platform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: spikes/desktop-platform/global.json
+      - run: dotnet workload install maui
+      - run: dotnet test tests/Loregrove.PlatformSpike.Tests/Loregrove.PlatformSpike.Tests.csproj -c Release
+      - run: dotnet build src/Loregrove.PlatformSpike.Desktop/Loregrove.PlatformSpike.Desktop.csproj -f net10.0-maccatalyst -c Release -p:EnableCodeSigning=false

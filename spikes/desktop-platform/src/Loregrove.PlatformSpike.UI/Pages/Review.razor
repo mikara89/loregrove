@@ -1,0 +1,16 @@
+@page "/review"
+@inject IPlatformSpikeService SpikeService
+
+<PageIntro Title="Review inbox" Description="A clarification decision updates an injected in-process C# service." />
+<FluentCard class="page-card review-card">
+    <p class="eyebrow">Possible duplicate project</p><h2>Project Atlas <span aria-hidden="true">↔</span> Atlas Migration</h2>
+    <p><strong>Sources</strong></p><ul><li>roadmap.pdf</li><li>budget.xlsx</li></ul><p>Are these the same project?</p>
+    <div class="button-row"><FluentButton Appearance="ButtonAppearance.Primary" @onclick="() => DecideAsync(ReviewDecision.Same)">Same</FluentButton><FluentButton @onclick="() => DecideAsync(ReviewDecision.Different)">Different</FluentButton><FluentButton @onclick="() => DecideAsync(ReviewDecision.NotSure)">Not sure</FluentButton></div>
+    <p aria-live="polite">Service state: <strong>@_decision</strong></p>
+</FluentCard>
+
+@code {
+    private ReviewDecision _decision;
+    protected override void OnInitialized() => _decision = SpikeService.CurrentReviewDecision;
+    private async Task DecideAsync(ReviewDecision decision) => _decision = await SpikeService.SetReviewDecisionAsync(decision, CancellationToken.None);
+}

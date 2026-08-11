@@ -1,0 +1,33 @@
+@inherits LayoutComponentBase
+
+<div class="app-shell">
+    <aside class="sidebar">
+        <div class="brand" aria-label="Loregrove">
+            <span class="brand-mark" aria-hidden="true">L</span>
+            <div>
+                <strong>Loregrove</strong>
+                <small>local knowledge</small>
+            </div>
+        </div>
+
+        <FluentNav Width="240">
+            <FluentNavItem Href="/" Match="NavLinkMatch.All">Home</FluentNavItem>
+            <FluentNavItem Href="/library">Library</FluentNavItem>
+            <FluentNavItem Href="/search">Search</FluentNavItem>
+            <FluentNavItem Href="/knowledge">Knowledge</FluentNavItem>
+            <FluentNavItem Href="/review">Review</FluentNavItem>
+            <FluentNavItem Href="/ask">Ask</FluentNavItem>
+            <FluentNavItem Href="/settings">Settings</FluentNavItem>
+        </FluentNav>
+    </aside>
+
+    <main>
+        <header class="topbar">
+            <span>Shared Razor UI</span>
+            <span class="runtime-label">Fluent UI Blazor v5</span>
+        </header>
+        <section class="content">
+            @Body
+        </section>
+    </main>
+</div>

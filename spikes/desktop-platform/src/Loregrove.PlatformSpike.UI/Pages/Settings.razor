@@ -1,0 +1,33 @@
+@page "/settings"
+@implements IAsyncDisposable
+@inject IDesktopPlatformService Platform
+@inject IJSRuntime JS
+
+<PageIntro Title="Platform capabilities" Description="Every operation crosses one injected host abstraction; secrets are never displayed or logged." />
+<div class="card-grid capabilities">
+    <FluentCard class="page-card"><h2>Files</h2><div class="button-row"><FluentButton id="pick-files" @onclick="PickFilesAsync">Pick files (Ctrl/Cmd+O)</FluentButton><FluentButton @onclick="PickFolderAsync">Pick folder</FluentButton></div><p>@_fileStatus</p>@if (_lastFile is not null) { <div class="button-row"><FluentButton @onclick="OpenFileAsync">Open</FluentButton><FluentButton @onclick="RevealFileAsync">Reveal</FluentButton></div> }</FluentCard>
+    <FluentCard class="page-card"><h2>Clipboard</h2><FluentButton @onclick="CopyAsync">Copy sample text</FluentButton><p>@_clipboardStatus</p></FluentCard>
+    <FluentCard class="page-card"><h2>Secure storage</h2><div class="button-row"><FluentButton @onclick="WriteSecretAsync">Write</FluentButton><FluentButton @onclick="ReadSecretAsync">Read</FluentButton><FluentButton @onclick="DeleteSecretAsync">Delete</FluentButton></div><p>@_secretStatus</p></FluentCard>
+    <FluentCard class="page-card drop-card"><h2>Drag and drop</h2><div id="drop-zone" class="drop-zone">Drop files here</div><p>@_dropStatus</p></FluentCard>
+</div>
+
+@code {
+    private string _fileStatus = "No file or folder selected.";
+    private string _clipboardStatus = "Not tested.";
+    private string _secretStatus = "Not tested.";
+    private string _dropStatus = "HTML file metadata handoff is initialized; native path access remains an adapter validation item.";
+    private PickedFile? _lastFile;
+    private DotNetObjectReference<Settings>? _reference;
+    protected override async Task OnAfterRenderAsync(bool firstRender) { if (!firstRender) return; _reference = DotNetObjectReference.Create(this); await JS.InvokeVoidAsync("loregroveDrop.register", "drop-zone", _reference); }
+    [JSInvokable] public Task FilesDropped(DroppedFile[] files) { _dropStatus = files.Length == 0 ? "No files received." : string.Join(", ", files.Select(file => $"{file.Name} ({file.Size:N0} bytes)")); return InvokeAsync(StateHasChanged); }
+    private async Task PickFilesAsync() { var files = await Platform.PickFilesAsync(CancellationToken.None); _lastFile = files.FirstOrDefault(); _fileStatus = files.Count == 0 ? "Cancelled." : string.Join(", ", files.Select(file => file.Name)); }
+    private async Task PickFolderAsync() { var folder = await Platform.PickFolderAsync(CancellationToken.None); _fileStatus = folder is null ? "Cancelled." : folder.FullPath; }
+    private async Task CopyAsync() { await Platform.CopyTextAsync("Loregrove platform spike", CancellationToken.None); _clipboardStatus = "Copied through the host adapter."; }
+    private async Task WriteSecretAsync() { await Platform.WriteSecretAsync("spike-secret", Guid.NewGuid().ToString("N"), CancellationToken.None); _secretStatus = "Secret written (value intentionally hidden)."; }
+    private async Task ReadSecretAsync() { _secretStatus = await Platform.ReadSecretAsync("spike-secret", CancellationToken.None) is null ? "No secret stored." : "Secret read successfully (value intentionally hidden)."; }
+    private async Task DeleteSecretAsync() { await Platform.DeleteSecretAsync("spike-secret", CancellationToken.None); _secretStatus = "Secret deleted."; }
+    private async Task OpenFileAsync() { if (_lastFile is not null) await Platform.OpenFileAsync(_lastFile.FullPath, CancellationToken.None); }
+    private async Task RevealFileAsync() { if (_lastFile is not null) await Platform.RevealFileAsync(_lastFile.FullPath, CancellationToken.None); }
+    public async ValueTask DisposeAsync() { try { await JS.InvokeVoidAsync("loregroveDrop.dispose", "drop-zone"); } catch (JSDisconnectedException) { } _reference?.Dispose(); }
+    public sealed record DroppedFile(string Name, long Size, string Type);
+}

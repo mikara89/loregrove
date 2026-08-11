@@ -1,0 +1,32 @@
+@page "/"
+@inject ILoregroveClient Client
+
+<FluentCard class="page-card hero-card">
+    <p class="eyebrow">Production repository ready</p>
+    <h1>Your knowledge, rooted in evidence.</h1>
+    <p>
+        Loregrove is a local-first personal knowledge compiler. This bootstrap establishes the
+        application boundaries; library and knowledge features arrive in later milestones.
+    </p>
+
+    <div class="status-grid" aria-label="Application area status">
+        @foreach (var area in Areas)
+        {
+            <div class="status-item">
+                <strong>@area</strong>
+                <span>Boundary available</span>
+            </div>
+        }
+    </div>
+</FluentCard>
+
+@code {
+    private IReadOnlyList<string> Areas =>
+    [
+        Client.Library.Name,
+        Client.Search.Name,
+        Client.Knowledge.Name,
+        Client.Review.Name,
+        Client.Ask.Name,
+    ];
+}

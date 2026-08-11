@@ -1,0 +1,55 @@
+@page "/library"
+@page "/search"
+@inject IPlatformSpikeService SpikeService
+@inject NavigationManager Navigation
+
+<PageIntro Title="Library" Description="Virtualized access to 10,000 deterministic records with filtering, sorting, selection, and detail navigation." />
+<FluentCard class="page-card collection-toolbar">
+    <FluentTextInput Value="@_filter" ValueChanged="FilterChanged" Placeholder="Filter title, type, state, or category" Autofocus="true" />
+    <FluentSelect TOption="string" TValue="string" Value="@_sort" ValueChanged="SortChanged">
+        <FluentOptionString Value="title">Title</FluentOptionString><FluentOptionString Value="date">Newest imported</FluentOptionString><FluentOptionString Value="category">Category</FluentOptionString>
+    </FluentSelect>
+    <span>@Filtered.Count.ToString("N0") records · filter @_filterElapsedMs.ToString("0.0") ms</span>
+</FluentCard>
+<FluentCard class="page-card grid-card">
+    <FluentDataGrid TGridItem="DemoDocument" Items="@Filtered.AsQueryable()" Virtualize="true" ItemSize="46" ResizableColumns="true" GridTemplateColumns="2fr 1fr 1.2fr 1.2fr 1fr 90px" Style="height: 500px; overflow-y: auto;">
+        <PropertyColumn Property="@(document => document.Title)" Title="Title" Sortable="true" />
+        <PropertyColumn Property="@(document => document.SourceType)" Title="Type" Sortable="true" />
+        <PropertyColumn Property="@(document => document.ProcessingState)" Title="State" Sortable="true" />
+        <PropertyColumn Property="@(document => document.ImportedDate)" Title="Imported" Sortable="true" />
+        <PropertyColumn Property="@(document => document.Category)" Title="Category" Sortable="true" />
+        <TemplateColumn Title="Action" Context="document"><FluentButton @onclick="() => Select(document)">Select</FluentButton></TemplateColumn>
+    </FluentDataGrid>
+</FluentCard>
+@if (_selected is not null)
+{
+    <FluentCard class="page-card detail-panel">
+        <div><p class="eyebrow">Selected source #@_selected.Id</p><h2>@_selected.Title</h2><p>@_selected.SourceType · @_selected.Category · @_selected.ProcessingState</p></div>
+        <FluentButton Appearance="ButtonAppearance.Primary" @onclick="OpenSelected">Open evidence</FluentButton>
+    </FluentCard>
+}
+
+@code {
+    private IReadOnlyList<DemoDocument> _documents = [];
+    private List<DemoDocument> Filtered = [];
+    private string _filter = string.Empty;
+    private string _sort = "title";
+    private double _filterElapsedMs;
+    private DemoDocument? _selected;
+
+    protected override async Task OnInitializedAsync() { _documents = await SpikeService.GetDocumentsAsync(CancellationToken.None); ApplyFilterAndSort(); }
+    private void FilterChanged(string value) { _filter = value ?? string.Empty; ApplyFilterAndSort(); }
+    private void SortChanged(string value) { _sort = value ?? "title"; ApplyFilterAndSort(); }
+    private void Select(DemoDocument document) => _selected = document;
+    private void OpenSelected() { if (_selected is not null) Navigation.NavigateTo($"/source/{_selected.Id}"); }
+    private void ApplyFilterAndSort()
+    {
+        var started = System.Diagnostics.Stopwatch.GetTimestamp();
+        IEnumerable<DemoDocument> query = _documents;
+        if (!string.IsNullOrWhiteSpace(_filter))
+            query = query.Where(document => document.Title.Contains(_filter, StringComparison.OrdinalIgnoreCase) || document.SourceType.Contains(_filter, StringComparison.OrdinalIgnoreCase) || document.ProcessingState.Contains(_filter, StringComparison.OrdinalIgnoreCase) || document.Category.Contains(_filter, StringComparison.OrdinalIgnoreCase));
+        query = _sort switch { "date" => query.OrderByDescending(document => document.ImportedDate), "category" => query.OrderBy(document => document.Category).ThenBy(document => document.Title), _ => query.OrderBy(document => document.Title) };
+        Filtered = query.ToList();
+        _filterElapsedMs = System.Diagnostics.Stopwatch.GetElapsedTime(started).TotalMilliseconds;
+    }
+}

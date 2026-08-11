@@ -1,0 +1,14 @@
+@page "/knowledge"
+@implements IAsyncDisposable
+@inject IPlatformSpikeService SpikeService
+@inject IJSRuntime JS
+
+<PageIntro Title="Knowledge graph" Description="100 C# nodes and 300 edges rendered by Cytoscape.js; node selection calls back into .NET." />
+<FluentCard class="page-card graph-card"><div id="knowledge-graph" class="graph-surface" aria-label="Interactive knowledge graph"></div><p aria-live="polite">Selected node: <strong>@(_selectedNode ?? "none")</strong></p></FluentCard>
+@code {
+    private DotNetObjectReference<Knowledge>? _reference;
+    private string? _selectedNode;
+    protected override async Task OnAfterRenderAsync(bool firstRender) { if (!firstRender) return; _reference = DotNetObjectReference.Create(this); await JS.InvokeVoidAsync("loregroveGraph.render", "knowledge-graph", SpikeService.GetGraph(), _reference); }
+    [JSInvokable] public Task SelectNode(string id, string label) { _selectedNode = $"{label} ({id})"; return InvokeAsync(StateHasChanged); }
+    public async ValueTask DisposeAsync() { try { await JS.InvokeVoidAsync("loregroveGraph.dispose", "knowledge-graph"); } catch (JSDisconnectedException) { } _reference?.Dispose(); }
+}

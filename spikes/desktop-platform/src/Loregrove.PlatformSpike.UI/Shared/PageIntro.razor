@@ -1,0 +1,9 @@
+<div class="page-intro">
+    <p class="eyebrow">@Eyebrow</p><h1>@Title</h1><p>@Description</p>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+    [Parameter] public string Eyebrow { get; set; } = "Desktop platform spike";
+    [Parameter, EditorRequired] public string Description { get; set; } = string.Empty;
+}

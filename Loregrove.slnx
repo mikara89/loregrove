@@ -1,0 +1,21 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Loregrove.Application/Loregrove.Application.csproj" />
+    <Project Path="src/Loregrove.Desktop/Loregrove.Desktop.csproj" />
+    <Project Path="src/Loregrove.Domain/Loregrove.Domain.csproj" />
+    <Project Path="src/Loregrove.Infrastructure.AI/Loregrove.Infrastructure.AI.csproj" />
+    <Project Path="src/Loregrove.Infrastructure.Desktop/Loregrove.Infrastructure.Desktop.csproj" />
+    <Project Path="src/Loregrove.Infrastructure.Docling/Loregrove.Infrastructure.Docling.csproj" />
+    <Project Path="src/Loregrove.Infrastructure.LocalFiles/Loregrove.Infrastructure.LocalFiles.csproj" />
+    <Project Path="src/Loregrove.Infrastructure.Search/Loregrove.Infrastructure.Search.csproj" />
+    <Project Path="src/Loregrove.Infrastructure.Sqlite/Loregrove.Infrastructure.Sqlite.csproj" />
+    <Project Path="src/Loregrove.UI/Loregrove.UI.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Loregrove.ContractTests/Loregrove.ContractTests.csproj" />
+    <Project Path="tests/Loregrove.EndToEndTests/Loregrove.EndToEndTests.csproj" />
+    <Project Path="tests/Loregrove.IntegrationTests/Loregrove.IntegrationTests.csproj" />
+    <Project Path="tests/Loregrove.UITests/Loregrove.UITests.csproj" />
+    <Project Path="tests/Loregrove.UnitTests/Loregrove.UnitTests.csproj" />
+  </Folder>
+</Solution>

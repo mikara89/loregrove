@@ -1,0 +1,28 @@
+@page "/source/{Id:int}"
+<PageIntro Title="Source evidence" Description="Reusable Markdig rendering in the shared Razor UI; raw HTML is disabled." />
+<FluentCard class="page-card"><MarkdownView Content="@SampleMarkdown" /></FluentCard>
+@code {
+    [Parameter] public int Id { get; set; }
+    private string SampleMarkdown => $$"""
+        # Evidence file {{Id:00000}}
+
+        This content is rendered with **Markdig** and stays in the shared Razor project.
+
+        ## Findings
+
+        - Original evidence is preserved.
+        - Generated knowledge remains interpretation.
+        - [Loregrove architecture](https://example.invalid/loregrove) keeps the boundary explicit.
+
+        ```csharp
+        var source = await service.GetDocumentsAsync(cancellationToken);
+        ```
+
+        | Signal | Observation |
+        | --- | --- |
+        | Runtime | .NET 10 |
+        | UI | Fluent UI Blazor v5 |
+
+        > Evidence should remain traceable to its source.
+        """;
+}

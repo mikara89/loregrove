@@ -1,0 +1,14 @@
+<FluentCard class="page-card">
+    <p class="eyebrow">Production shell</p>
+    <h1>@Title</h1>
+    <p>@Description</p>
+    <p class="placeholder-note">This surface is intentionally a placeholder for a later milestone.</p>
+</FluentCard>
+
+@code {
+    [Parameter, EditorRequired]
+    public required string Title { get; set; }
+
+    [Parameter, EditorRequired]
+    public required string Description { get; set; }
+}

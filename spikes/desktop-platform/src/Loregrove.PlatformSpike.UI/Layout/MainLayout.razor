@@ -1,0 +1,53 @@
+@inherits LayoutComponentBase
+@inject IJSRuntime JS
+@inject IThemeService Theme
+
+<div class="app-shell @(_isDark ? "theme-dark" : "theme-light")">
+    <aside class="sidebar">
+        <div class="brand"><span class="brand-mark">L</span><div><strong>Loregrove</strong><small>platform spike</small></div></div>
+        <FluentNav Width="240">
+            <FluentNavItem Href="/" Match="NavLinkMatch.All">Home</FluentNavItem>
+            <FluentNavItem Href="/library">Library</FluentNavItem>
+            <FluentNavItem Href="/search">Search</FluentNavItem>
+            <FluentNavItem Href="/knowledge">Knowledge</FluentNavItem>
+            <FluentNavItem Href="/review">Review</FluentNavItem>
+            <FluentNavItem Href="/ask">Ask</FluentNavItem>
+            <FluentNavItem Href="/settings">Settings</FluentNavItem>
+        </FluentNav>
+    </aside>
+    <main>
+        <header class="topbar">
+            <span>Shared Razor UI · Fluent UI Blazor v5</span>
+            <FluentButton Appearance="ButtonAppearance.Default" @onclick="CycleThemeAsync">Theme: @_mode</FluentButton>
+        </header>
+        <section class="content">@Body</section>
+    </main>
+</div>
+
+@code {
+    private ThemeMode _mode = ThemeMode.System;
+    private bool _isDark;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        var stored = await JS.InvokeAsync<string?>("loregroveTheme.get");
+        _mode = stored switch { "light" => ThemeMode.Light, "dark" => ThemeMode.Dark, _ => ThemeMode.System };
+        await ApplyThemeAsync();
+        StateHasChanged();
+    }
+
+    private async Task CycleThemeAsync()
+    {
+        _mode = _mode switch { ThemeMode.System => ThemeMode.Light, ThemeMode.Light => ThemeMode.Dark, _ => ThemeMode.System };
+        await JS.InvokeVoidAsync("loregroveTheme.set", _mode.ToString().ToLowerInvariant());
+        await ApplyThemeAsync();
+    }
+
+    private async Task ApplyThemeAsync()
+    {
+        await Theme.SetThemeAsync(ThemeColorVariant.Default, _mode);
+        _isDark = _mode == ThemeMode.Dark || (_mode == ThemeMode.System && await Theme.IsSystemDarkAsync());
+    }
+
+}

@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Loregrove.PlatformSpike.Desktop/Loregrove.PlatformSpike.Desktop.csproj" />
+    <Project Path="src/Loregrove.PlatformSpike.Services/Loregrove.PlatformSpike.Services.csproj" />
+    <Project Path="src/Loregrove.PlatformSpike.UI/Loregrove.PlatformSpike.UI.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Loregrove.PlatformSpike.Tests/Loregrove.PlatformSpike.Tests.csproj" />
+  </Folder>
+</Solution>
