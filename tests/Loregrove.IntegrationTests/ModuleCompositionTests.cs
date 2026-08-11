@@ -9,7 +9,7 @@ namespace Loregrove.IntegrationTests;
 public sealed class ModuleCompositionTests
 {
     [Fact]
-    public void DeferredInfrastructureModulesRemainLoadableWithoutProductInfrastructure()
+    public void InfrastructureModulesRemainLoadable()
     {
         var assemblies = new[]
         {

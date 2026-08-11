@@ -13,6 +13,7 @@
 | Web version | Not planned |
 | Mobile | Not MVP |
 | Database | SQLite |
+| Persistence programming model | EF Core allowed in Application; SQLite provider isolated in Infrastructure.Sqlite |
 | Search | FTS5 + managed vector index MVP |
 | Files | Content-addressed local storage |
 | Source object identity | Lowercase SHA-256 with `<prefix>/<hash>` keys |

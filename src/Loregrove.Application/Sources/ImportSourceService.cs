@@ -1,5 +1,7 @@
+using Loregrove.Application.Persistence;
 using Loregrove.Application.Storage;
 using Loregrove.Domain.Sources;
+using Microsoft.EntityFrameworkCore;
 
 namespace Loregrove.Application.Sources;
 
@@ -8,10 +10,13 @@ namespace Loregrove.Application.Sources;
 /// </summary>
 public sealed class ImportSourceService(
     IObjectStore objectStore,
-    ISourceDocumentRepository repository,
-    TimeProvider? timeProvider = null)
+    ILoregroveDbContext dbContext,
+    IDatabaseExceptionClassifier databaseExceptionClassifier,
+    TimeProvider? timeProvider = null,
+    IImportTransactionHook? transactionHook = null)
 {
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
+    private readonly IImportTransactionHook _transactionHook = transactionHook ?? NoOpImportTransactionHook.Instance;
 
     public async Task<ImportSourceResult> ImportAsync(
         ImportSourceCommand command,
@@ -40,6 +45,12 @@ public sealed class ImportSourceService(
 
         // A cancelled or failed metadata commit deliberately leaves the immutable object in place.
         cancellationToken.ThrowIfCancellationRequested();
+        var existing = await FindExistingAsync(storedObject.ContentHash, cancellationToken).ConfigureAwait(false);
+        if (existing is not null)
+        {
+            return ExistingResult(existing, storedObject.ContentHash);
+        }
+
         var capturedAt = _timeProvider.GetUtcNow();
         var documentId = SourceDocumentId.New();
         var versionId = SourceDocumentVersionId.New();
@@ -67,16 +78,63 @@ public sealed class ImportSourceService(
             capturedAt,
             attemptCount: 0);
 
-        var commit = await repository.TryAddCaptureAsync(
-            document,
-            version,
-            processingJob,
-            cancellationToken).ConfigureAwait(false);
+        await using var transaction = await dbContext.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            dbContext.SourceDocuments.Add(document);
+            await _transactionHook.OnStageAsync(
+                ImportTransactionStage.AfterDocumentAdded,
+                cancellationToken).ConfigureAwait(false);
+            dbContext.SourceDocumentVersions.Add(version);
+            await _transactionHook.OnStageAsync(
+                ImportTransactionStage.AfterVersionAdded,
+                cancellationToken).ConfigureAwait(false);
+            await _transactionHook.OnStageAsync(
+                ImportTransactionStage.BeforeProcessingJobAdded,
+                cancellationToken).ConfigureAwait(false);
+            dbContext.ProcessingJobs.Add(processingJob);
 
-        return new ImportSourceResult(
-            commit.DocumentId,
-            commit.VersionId,
-            storedObject.ContentHash,
-            commit.Created ? ImportDisposition.Created : ImportDisposition.AlreadyExists);
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            await _transactionHook.OnStageAsync(
+                ImportTransactionStage.BeforeCommit,
+                cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+            return new ImportSourceResult(
+                document.Id,
+                version.Id,
+                storedObject.ContentHash,
+                ImportDisposition.Created);
+        }
+        catch (DbUpdateException exception)
+            when (databaseExceptionClassifier.IsUniqueConstraintViolation(exception))
+        {
+            await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            dbContext.ClearTrackedChanges();
+            existing = await FindExistingAsync(storedObject.ContentHash, CancellationToken.None).ConfigureAwait(false);
+            if (existing is null)
+            {
+                throw;
+            }
+
+            return ExistingResult(existing, storedObject.ContentHash);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            throw;
+        }
     }
+
+    private async Task<SourceDocumentVersion?> FindExistingAsync(
+        string contentHash,
+        CancellationToken cancellationToken) =>
+        await dbContext.SourceDocumentVersions
+            .AsNoTracking()
+            .SingleOrDefaultAsync(version => version.ContentHash == contentHash, cancellationToken)
+            .ConfigureAwait(false);
+
+    private static ImportSourceResult ExistingResult(SourceDocumentVersion existing, string contentHash) =>
+        new(existing.DocumentId, existing.Id, contentHash, ImportDisposition.AlreadyExists);
 }

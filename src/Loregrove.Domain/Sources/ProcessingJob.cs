@@ -7,7 +7,9 @@ public sealed class ProcessingJob
         SourceDocumentVersionId documentVersionId,
         ProcessingJobState state,
         DateTimeOffset createdAt,
-        int attemptCount)
+        int attemptCount,
+        DateTimeOffset? updatedAt = null,
+        string? lastError = null)
     {
         if (id.Value == Guid.Empty)
         {
@@ -20,21 +22,43 @@ public sealed class ProcessingJob
         }
 
         ArgumentOutOfRangeException.ThrowIfNegative(attemptCount);
+        if (lastError?.Length > 2000)
+        {
+            throw new ArgumentException("The processing error must not exceed 2000 characters.", nameof(lastError));
+        }
 
         Id = id;
         DocumentVersionId = documentVersionId;
         State = state;
         CreatedAt = createdAt;
         AttemptCount = attemptCount;
+        UpdatedAt = updatedAt;
+        LastError = lastError;
     }
 
     public ProcessingJobId Id { get; }
 
     public SourceDocumentVersionId DocumentVersionId { get; }
 
-    public ProcessingJobState State { get; }
+    public ProcessingJobState State { get; private set; }
 
     public DateTimeOffset CreatedAt { get; }
 
-    public int AttemptCount { get; }
+    public DateTimeOffset? UpdatedAt { get; private set; }
+
+    public int AttemptCount { get; private set; }
+
+    public string? LastError { get; private set; }
+
+    public bool RecoverInterrupted(DateTimeOffset recoveredAt)
+    {
+        if (State != ProcessingJobState.Processing)
+        {
+            return false;
+        }
+
+        State = ProcessingJobState.Pending;
+        UpdatedAt = recoveredAt;
+        return true;
+    }
 }

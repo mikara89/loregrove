@@ -99,6 +99,39 @@ public sealed class SourceDomainTests
         Assert.Contains(SourceProcessingState.PendingProcessing, Enum.GetValues<SourceProcessingState>());
     }
 
+    [Fact]
+    public void InterruptedJobRecoveryReturnsProcessingToPendingWithoutAddingAttempt()
+    {
+        var recoveredAt = DateTimeOffset.UtcNow;
+        var job = new ProcessingJob(
+            ProcessingJobId.New(),
+            SourceDocumentVersionId.New(),
+            ProcessingJobState.Processing,
+            recoveredAt.AddMinutes(-1),
+            attemptCount: 2);
+
+        Assert.True(job.RecoverInterrupted(recoveredAt));
+        Assert.Equal(ProcessingJobState.Pending, job.State);
+        Assert.Equal(2, job.AttemptCount);
+        Assert.Equal(recoveredAt, job.UpdatedAt);
+        Assert.Null(job.LastError);
+    }
+
+    [Fact]
+    public void RecoveryDoesNotChangeFinishedJob()
+    {
+        var job = new ProcessingJob(
+            ProcessingJobId.New(),
+            SourceDocumentVersionId.New(),
+            ProcessingJobState.Completed,
+            DateTimeOffset.UtcNow,
+            attemptCount: 1);
+
+        Assert.False(job.RecoverInterrupted(DateTimeOffset.UtcNow));
+        Assert.Equal(ProcessingJobState.Completed, job.State);
+        Assert.Null(job.UpdatedAt);
+    }
+
     [Theory]
     [InlineData(ImportDisposition.Created)]
     [InlineData(ImportDisposition.AlreadyExists)]

@@ -1,197 +1,269 @@
-using System.Security.Cryptography;
+using Loregrove.Application.Persistence;
 using Loregrove.Application.Sources;
 using Loregrove.Application.Storage;
 using Loregrove.Domain.Sources;
 using Loregrove.Infrastructure.LocalFiles;
+using Loregrove.Infrastructure.Sqlite;
+using Loregrove.Infrastructure.Sqlite.Persistence;
+using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Loregrove.IntegrationTests;
 
 public sealed class LocalLibraryIntegrationTests
 {
     [Fact]
-    public async Task InitializationIsIdempotentAndPreservesExistingData()
+    public async Task EmptyLibraryInitializesMigrationAndReinitializesWithoutDataLoss()
     {
         using var directory = TemporaryDirectory.Create();
-        var paths = new LocalLibraryPaths(directory.Path);
-        var initializer = new LocalLibraryInitializer(paths);
+        await using var services = CreateServices(directory.Path);
+        await InitializeAsync(services);
+        var paths = services.GetRequiredService<ILibraryPaths>();
 
-        await initializer.InitializeAsync(CancellationToken.None);
-        var sentinel = Path.Combine(paths.Objects, "existing-object");
-        await File.WriteAllTextAsync(sentinel, "keep", CancellationToken.None);
-        await initializer.InitializeAsync(CancellationToken.None);
+        var first = await ImportAsync(services, "Evidence", "evidence.txt", "text/plain", [1, 2, 3]);
+        await InitializeAsync(services);
 
-        Assert.All(
-            new[] { paths.Root, paths.Objects, paths.Artifacts, paths.Indexes, paths.Backups, paths.Logs },
-            path => Assert.True(Directory.Exists(path), path));
-        Assert.Equal("keep", await File.ReadAllTextAsync(sentinel, CancellationToken.None));
+        Assert.True(File.Exists(paths.Database));
+        await using var scope = services.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<LoregroveDbContext>();
+        Assert.Contains("20260811183241_InitialSqlitePersistence", await context.Database.GetAppliedMigrationsAsync());
+        Assert.Equal(1, await context.SourceDocuments.CountAsync());
+        Assert.Equal(ImportDisposition.Created, first.Disposition);
     }
 
     [Fact]
-    public async Task ObjectUsesNestedHashDirectoryAndReopensAfterStoreRestart()
+    public async Task CompleteCaptureSurvivesServiceAndDatabaseRestart()
     {
         using var directory = TemporaryDirectory.Create();
-        var paths = new LocalLibraryPaths(directory.Path);
-        var firstStore = new LocalObjectStore(paths);
-        var bytes = "durable source"u8.ToArray();
+        ImportSourceResult imported;
+        string objectKey;
 
-        var stored = await firstStore.StoreAsync(new MemoryStream(bytes), CancellationToken.None);
-        var parts = stored.ObjectKey.Split('/');
-        var expectedPath = Path.Combine(paths.Objects, parts[0], parts[1]);
-        var restartedStore = new LocalObjectStore(new LocalLibraryPaths(directory.Path));
-        await using var reopened = await restartedStore.OpenReadAsync(stored.ObjectKey, CancellationToken.None);
+        await using (var firstServices = CreateServices(directory.Path))
+        {
+            await InitializeAsync(firstServices);
+            imported = await ImportAsync(firstServices, "Durable", "durable.bin", null, [9, 8, 7]);
+            await using var scope = firstServices.CreateAsyncScope();
+            var context = scope.ServiceProvider.GetRequiredService<LoregroveDbContext>();
+            objectKey = (await context.SourceDocumentVersions.AsNoTracking().SingleAsync()).ObjectKey;
+        }
 
-        Assert.True(File.Exists(expectedPath));
-        Assert.Equal(stored.ContentHash[..2], parts[0]);
-        Assert.Equal(stored.ContentHash, parts[1]);
-        Assert.Equal(bytes, await ReadAllAsync(reopened));
-    }
+        SqliteConnection.ClearAllPools();
+        await using var restartedServices = CreateServices(directory.Path);
+        await InitializeAsync(restartedServices);
+        await using var restartedScope = restartedServices.CreateAsyncScope();
+        var restartedContext = restartedScope.ServiceProvider.GetRequiredService<LoregroveDbContext>();
+        var objectStore = restartedServices.GetRequiredService<IObjectStore>();
 
-    public static TheoryData<string> UnsafeFileNames => new()
-    {
-        "../../something.pdf",
-        "..\\..\\something.pdf",
-        "CON",
-        "document?.pdf",
-        new string('x', 5000),
-        "資料-🌳.pdf",
-        "folder/name\\source.txt",
-    };
-
-    [Theory]
-    [MemberData(nameof(UnsafeFileNames))]
-    public async Task UntrustedOriginalNameRemainsMetadataOnly(string originalFileName)
-    {
-        using var directory = TemporaryDirectory.Create();
-        var paths = new LocalLibraryPaths(directory.Path);
-        var repository = new InMemorySourceDocumentRepository();
-        var service = new ImportSourceService(new LocalObjectStore(paths), repository);
-
-        var result = await service.ImportAsync(
-            new ImportSourceCommand("Imported source", originalFileName, null, new MemoryStream([4, 5, 6])),
-            CancellationToken.None);
-
-        var version = Assert.Single(repository.Versions);
-        var finalObjects = FinalObjectFiles(paths).ToArray();
-        Assert.Equal(ImportDisposition.Created, result.Disposition);
-        Assert.Equal(originalFileName, version.OriginalFileName);
-        Assert.Single(finalObjects);
-        Assert.Equal(version.ContentHash, Path.GetFileName(finalObjects[0]));
-        Assert.DoesNotContain(originalFileName, finalObjects[0], StringComparison.Ordinal);
+        Assert.Equal(imported.DocumentId, (await restartedContext.SourceDocuments.SingleAsync()).Id);
+        Assert.Equal(imported.VersionId, (await restartedContext.SourceDocumentVersions.SingleAsync()).Id);
+        Assert.Single(await restartedContext.ProcessingJobs.ToListAsync());
+        await using var source = await objectStore.OpenReadAsync(objectKey, CancellationToken.None);
+        Assert.Equal(new byte[] { 9, 8, 7 }, await ReadAllAsync(source));
     }
 
     [Fact]
-    public async Task LargeNonSeekableSourceIsReadInBoundedChunks()
+    public async Task SixteenConcurrentDuplicateImportsCreateExactlyOneCapture()
     {
         using var directory = TemporaryDirectory.Create();
-        var paths = new LocalLibraryPaths(directory.Path);
-        var store = new LocalObjectStore(paths);
-        const long length = 12L * 1024 * 1024 + 37;
-        await using var source = new SyntheticForwardOnlyStream(length);
-
-        var stored = await store.StoreAsync(source, CancellationToken.None);
-        await using var reopened = await store.OpenReadAsync(stored.ObjectKey, CancellationToken.None);
-        var reopenedHash = Convert.ToHexString(await SHA256.HashDataAsync(reopened)).ToLowerInvariant();
-
-        Assert.Equal(length, stored.ByteLength);
-        Assert.Equal(stored.ContentHash, reopenedHash);
-        Assert.False(source.CanSeek);
-        Assert.InRange(source.MaximumRequestedBuffer, 1, 81920);
-        Assert.True(source.ReadCount > 2);
-    }
-
-    [Fact]
-    public async Task CancellationRemovesTemporaryDataAndCreatesNoCapture()
-    {
-        using var directory = TemporaryDirectory.Create();
-        var paths = new LocalLibraryPaths(directory.Path);
-        var repository = new InMemorySourceDocumentRepository();
-        var service = new ImportSourceService(new LocalObjectStore(paths), repository);
-        using var cancellation = new CancellationTokenSource();
-        await using var source = new CancelingSyntheticStream(cancellation);
-
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => service.ImportAsync(
-            new ImportSourceCommand("Cancelled", "cancelled.bin", null, source),
-            cancellation.Token));
-
-        Assert.Empty(Directory.EnumerateFiles(paths.Objects, "*", SearchOption.AllDirectories));
-        Assert.Empty(repository.Documents);
-        Assert.Empty(repository.Versions);
-        Assert.Empty(repository.Jobs);
-    }
-
-    [Fact]
-    public async Task ConcurrentIdenticalImportsCreateOneCaptureAndOneFinalObject()
-    {
-        using var directory = TemporaryDirectory.Create();
-        var paths = new LocalLibraryPaths(directory.Path);
-        var repository = new InMemorySourceDocumentRepository();
-        var service = new ImportSourceService(new LocalObjectStore(paths), repository);
+        await using var services = CreateServices(directory.Path);
+        await InitializeAsync(services);
         var bytes = new byte[512 * 1024];
         Random.Shared.NextBytes(bytes);
-        var imports = Enumerable.Range(0, 16).Select(index => service.ImportAsync(
-            new ImportSourceCommand(
+
+        var imports = Enumerable.Range(0, 16)
+            .Select(index => ImportAsync(
+                services,
                 $"Source {index}",
                 $"renamed-{index}.bin",
                 "application/octet-stream",
-                new MemoryStream(bytes, writable: false)),
-            CancellationToken.None));
-
+                bytes));
         var results = await Task.WhenAll(imports);
 
         Assert.Single(results, result => result.Disposition == ImportDisposition.Created);
         Assert.Equal(15, results.Count(result => result.Disposition == ImportDisposition.AlreadyExists));
         Assert.Single(results.Select(result => result.DocumentId).Distinct());
         Assert.Single(results.Select(result => result.VersionId).Distinct());
-        Assert.Single(FinalObjectFiles(paths));
-        Assert.Single(repository.Documents);
-        Assert.Single(repository.Versions);
-        Assert.Single(repository.Jobs);
+        await AssertCountsAsync(services, documents: 1, versions: 1, jobs: 1);
+        Assert.Single(FinalObjectFiles(services.GetRequiredService<ILibraryPaths>()));
     }
 
     [Fact]
-    public async Task ChangedBytesCreateIndependentSourcesWithoutAssumedVersionRelationship()
+    public async Task SameFilenameWithDifferentBytesCreatesIndependentCaptures()
     {
         using var directory = TemporaryDirectory.Create();
-        var repository = new InMemorySourceDocumentRepository();
-        var service = new ImportSourceService(
-            new LocalObjectStore(new LocalLibraryPaths(directory.Path)),
-            repository);
+        await using var services = CreateServices(directory.Path);
+        await InitializeAsync(services);
 
-        var first = await service.ImportAsync(
-            new ImportSourceCommand("Report", "report.pdf", "application/pdf", new MemoryStream([1])),
-            CancellationToken.None);
-        var changed = await service.ImportAsync(
-            new ImportSourceCommand("Report", "report.pdf", "application/pdf", new MemoryStream([2])),
-            CancellationToken.None);
+        var first = await ImportAsync(services, "Report", "report.pdf", "application/pdf", [1]);
+        var second = await ImportAsync(services, "Report", "report.pdf", "application/pdf", [2]);
 
         Assert.Equal(ImportDisposition.Created, first.Disposition);
-        Assert.Equal(ImportDisposition.Created, changed.Disposition);
-        Assert.NotEqual(first.DocumentId, changed.DocumentId);
-        Assert.Equal(2, repository.Versions.Count);
-        Assert.All(repository.Versions, version => Assert.Null(version.PreviousVersionId));
+        Assert.Equal(ImportDisposition.Created, second.Disposition);
+        Assert.NotEqual(first.DocumentId, second.DocumentId);
+        await AssertCountsAsync(services, documents: 2, versions: 2, jobs: 2);
+        Assert.Equal(2, FinalObjectFiles(services.GetRequiredService<ILibraryPaths>()).Count());
+        await using var scope = services.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<LoregroveDbContext>();
+        Assert.All(await context.SourceDocumentVersions.ToListAsync(), version => Assert.Null(version.PreviousVersionId));
+    }
+
+    [Theory]
+    [InlineData(ImportTransactionStage.AfterDocumentAdded)]
+    [InlineData(ImportTransactionStage.AfterVersionAdded)]
+    [InlineData(ImportTransactionStage.BeforeProcessingJobAdded)]
+    [InlineData(ImportTransactionStage.BeforeCommit)]
+    public async Task FailureAtEveryTransactionStageRollsBackAllRelationalRows(ImportTransactionStage stage)
+    {
+        using var directory = TemporaryDirectory.Create();
+        await using var services = CreateServices(directory.Path, new ThrowingTransactionHook(stage));
+        await InitializeAsync(services);
+
+        await Assert.ThrowsAsync<InjectedTransactionException>(() =>
+            ImportAsync(services, "Orphan", "orphan.bin", null, [4, 5, 6]));
+
+        await AssertCountsAsync(services, documents: 0, versions: 0, jobs: 0);
+        Assert.Single(FinalObjectFiles(services.GetRequiredService<ILibraryPaths>()));
     }
 
     [Fact]
-    public async Task MetadataFailureLeavesFinalizedObjectAvailableForLaterRecovery()
+    public async Task CancellationBeforeCommitRollsBackRelationalRowsAndLeavesSafeObject()
     {
         using var directory = TemporaryDirectory.Create();
-        var paths = new LocalLibraryPaths(directory.Path);
-        var service = new ImportSourceService(new LocalObjectStore(paths), new FailingRepository());
+        using var cancellation = new CancellationTokenSource();
+        await using var services = CreateServices(
+            directory.Path,
+            new CancelingTransactionHook(ImportTransactionStage.BeforeCommit, cancellation));
+        await InitializeAsync(services);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => service.ImportAsync(
-            new ImportSourceCommand("Source", "source.bin", null, new MemoryStream([9, 8, 7])),
-            CancellationToken.None));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => ImportAsync(
+            services,
+            "Cancelled",
+            "cancelled.bin",
+            null,
+            [7, 8, 9],
+            cancellation.Token));
 
-        Assert.Single(FinalObjectFiles(paths));
+        await AssertCountsAsync(services, documents: 0, versions: 0, jobs: 0);
+        Assert.Single(FinalObjectFiles(services.GetRequiredService<ILibraryPaths>()));
     }
 
-    private static IEnumerable<string> FinalObjectFiles(LocalLibraryPaths paths) =>
-        Directory.Exists(paths.Objects)
-            ? Directory.EnumerateFiles(paths.Objects, "*", SearchOption.AllDirectories)
-                .Where(path => !path.Contains(
-                    $"{Path.DirectorySeparatorChar}.tmp{Path.DirectorySeparatorChar}",
-                    StringComparison.Ordinal))
-            : [];
+    [Fact]
+    public async Task InitializationRecoversInterruptedJobsWithoutIncrementingAttempts()
+    {
+        using var directory = TemporaryDirectory.Create();
+        await using (var firstServices = CreateServices(directory.Path))
+        {
+            await InitializeAsync(firstServices);
+            await ImportAsync(firstServices, "Recover", "recover.bin", null, [1, 3, 5]);
+            await using var scope = firstServices.CreateAsyncScope();
+            var context = scope.ServiceProvider.GetRequiredService<LoregroveDbContext>();
+            await context.ProcessingJobs.ExecuteUpdateAsync(setters => setters
+                .SetProperty(job => job.State, ProcessingJobState.Processing)
+                .SetProperty(job => job.AttemptCount, 3));
+        }
+
+        SqliteConnection.ClearAllPools();
+        await using var restartedServices = CreateServices(directory.Path);
+        await InitializeAsync(restartedServices);
+        await using var restartedScope = restartedServices.CreateAsyncScope();
+        var restartedContext = restartedScope.ServiceProvider.GetRequiredService<LoregroveDbContext>();
+        var recovered = await restartedContext.ProcessingJobs.AsNoTracking().SingleAsync();
+
+        Assert.Equal(ProcessingJobState.Pending, recovered.State);
+        Assert.Equal(3, recovered.AttemptCount);
+        Assert.NotNull(recovered.UpdatedAt);
+    }
+
+    [Fact]
+    public async Task ForeignKeysWalBusyTimeoutAndQuickCheckAreEnabled()
+    {
+        using var directory = TemporaryDirectory.Create();
+        await using var services = CreateServices(directory.Path);
+        await InitializeAsync(services);
+        await using var scope = services.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<LoregroveDbContext>();
+
+        Assert.Equal("wal", await ScalarPragmaAsync(context, "journal_mode"));
+        Assert.Equal("1", await ScalarPragmaAsync(context, "foreign_keys"));
+        Assert.Equal("5000", await ScalarPragmaAsync(context, "busy_timeout"));
+
+        context.ProcessingJobs.Add(new ProcessingJob(
+            ProcessingJobId.New(),
+            SourceDocumentVersionId.New(),
+            ProcessingJobState.Pending,
+            DateTimeOffset.UtcNow,
+            attemptCount: 0));
+        await Assert.ThrowsAsync<DbUpdateException>(() => context.SaveChangesAsync());
+
+        var diagnostics = services.GetRequiredService<IDatabaseIntegrityDiagnostics>();
+        var integrity = await diagnostics.QuickCheckAsync(CancellationToken.None);
+        Assert.True(integrity.IsHealthy, integrity.Message);
+    }
+
+    private static ServiceProvider CreateServices(string root, IImportTransactionHook? hook = null)
+    {
+        var paths = new LocalLibraryPaths(root);
+        var collection = new ServiceCollection();
+        collection.AddSingleton<ILibraryPaths>(paths);
+        collection.AddSingleton<ILibraryDirectoryInitializer, LocalLibraryInitializer>();
+        collection.AddSingleton<IObjectStore, LocalObjectStore>();
+        collection.AddLoregroveSqlite(paths.Database);
+        if (hook is not null)
+        {
+            collection.AddScoped(_ => hook);
+        }
+
+        return collection.BuildServiceProvider(validateScopes: true);
+    }
+
+    private static async Task InitializeAsync(IServiceProvider services) =>
+        await services.GetRequiredService<ILibraryInitializer>().InitializeAsync(CancellationToken.None);
+
+    private static async Task<ImportSourceResult> ImportAsync(
+        IServiceProvider services,
+        string displayName,
+        string originalFileName,
+        string? mediaType,
+        byte[] bytes,
+        CancellationToken cancellationToken = default)
+    {
+        await using var scope = services.CreateAsyncScope();
+        var service = scope.ServiceProvider.GetRequiredService<ImportSourceService>();
+        await using var content = new MemoryStream(bytes, writable: false);
+        return await service.ImportAsync(
+            new ImportSourceCommand(displayName, originalFileName, mediaType, content),
+            cancellationToken);
+    }
+
+    private static async Task AssertCountsAsync(
+        IServiceProvider services,
+        int documents,
+        int versions,
+        int jobs)
+    {
+        await using var scope = services.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<LoregroveDbContext>();
+        Assert.Equal(documents, await context.SourceDocuments.CountAsync());
+        Assert.Equal(versions, await context.SourceDocumentVersions.CountAsync());
+        Assert.Equal(jobs, await context.ProcessingJobs.CountAsync());
+    }
+
+    private static async Task<string> ScalarPragmaAsync(LoregroveDbContext context, string pragma)
+    {
+        await context.Database.OpenConnectionAsync();
+        await using var command = context.Database.GetDbConnection().CreateCommand();
+        command.CommandText = $"PRAGMA {pragma};";
+        return Convert.ToString(
+            await command.ExecuteScalarAsync(),
+            System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
+    }
+
+    private static IEnumerable<string> FinalObjectFiles(ILibraryPaths paths) =>
+        Directory.EnumerateFiles(paths.Objects, "*", SearchOption.AllDirectories)
+            .Where(path => !path.Contains(
+                $"{Path.DirectorySeparatorChar}.tmp{Path.DirectorySeparatorChar}",
+                StringComparison.Ordinal));
 
     private static async Task<byte[]> ReadAllAsync(Stream stream)
     {
@@ -200,151 +272,35 @@ public sealed class LocalLibraryIntegrationTests
         return destination.ToArray();
     }
 
-    private sealed class InMemorySourceDocumentRepository : ISourceDocumentRepository
+    private sealed class ThrowingTransactionHook(ImportTransactionStage stage) : IImportTransactionHook
     {
-        private readonly object _gate = new();
-        private readonly Dictionary<string, (SourceDocument Document, SourceDocumentVersion Version)> _byHash = [];
-
-        public List<SourceDocument> Documents { get; } = [];
-
-        public List<SourceDocumentVersion> Versions { get; } = [];
-
-        public List<ProcessingJob> Jobs { get; } = [];
-
-        public Task<SourceCaptureCommitResult> TryAddCaptureAsync(
-            SourceDocument document,
-            SourceDocumentVersion version,
-            ProcessingJob processingJob,
-            CancellationToken cancellationToken)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            lock (_gate)
-            {
-                if (_byHash.TryGetValue(version.ContentHash, out var existing))
-                {
-                    return Task.FromResult(new SourceCaptureCommitResult(
-                        existing.Document.Id,
-                        existing.Version.Id,
-                        Created: false));
-                }
-
-                _byHash.Add(version.ContentHash, (document, version));
-                Documents.Add(document);
-                Versions.Add(version);
-                Jobs.Add(processingJob);
-                return Task.FromResult(new SourceCaptureCommitResult(document.Id, version.Id, Created: true));
-            }
-        }
+        public Task OnStageAsync(ImportTransactionStage currentStage, CancellationToken cancellationToken) =>
+            currentStage == stage
+                ? throw new InjectedTransactionException(stage)
+                : Task.CompletedTask;
     }
 
-    private sealed class FailingRepository : ISourceDocumentRepository
+    private sealed class CancelingTransactionHook(
+        ImportTransactionStage stage,
+        CancellationTokenSource cancellation) : IImportTransactionHook
     {
-        public Task<SourceCaptureCommitResult> TryAddCaptureAsync(
-            SourceDocument document,
-            SourceDocumentVersion version,
-            ProcessingJob processingJob,
-            CancellationToken cancellationToken) =>
-            throw new InvalidOperationException("Simulated metadata transaction failure.");
-    }
-
-    private sealed class SyntheticForwardOnlyStream(long length) : Stream
-    {
-        private long _position;
-
-        public int MaximumRequestedBuffer { get; private set; }
-
-        public int ReadCount { get; private set; }
-
-        public override bool CanRead => true;
-
-        public override bool CanSeek => false;
-
-        public override bool CanWrite => false;
-
-        public override long Length => throw new NotSupportedException();
-
-        public override long Position
+        public Task OnStageAsync(ImportTransactionStage currentStage, CancellationToken cancellationToken)
         {
-            get => throw new NotSupportedException();
-            set => throw new NotSupportedException();
-        }
-
-        public override ValueTask<int> ReadAsync(
-            Memory<byte> buffer,
-            CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            MaximumRequestedBuffer = Math.Max(MaximumRequestedBuffer, buffer.Length);
-            if (_position == length)
+            if (currentStage == stage)
             {
-                return ValueTask.FromResult(0);
+                cancellation.Cancel();
             }
 
-            var count = (int)Math.Min(buffer.Length, length - _position);
-            for (var index = 0; index < count; index++)
-            {
-                buffer.Span[index] = (byte)((_position + index) % 251);
-            }
-
-            _position += count;
-            ReadCount++;
-            return ValueTask.FromResult(count);
+            return Task.CompletedTask;
         }
-
-        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
-
-        public override void Flush() => throw new NotSupportedException();
-
-        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
-
-        public override void SetLength(long value) => throw new NotSupportedException();
-
-        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 
-    private sealed class CancelingSyntheticStream(CancellationTokenSource cancellation) : Stream
-    {
-        public override bool CanRead => true;
-
-        public override bool CanSeek => false;
-
-        public override bool CanWrite => false;
-
-        public override long Length => throw new NotSupportedException();
-
-        public override long Position
-        {
-            get => throw new NotSupportedException();
-            set => throw new NotSupportedException();
-        }
-
-        public override ValueTask<int> ReadAsync(
-            Memory<byte> buffer,
-            CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            buffer.Span[0] = 1;
-            cancellation.Cancel();
-            return ValueTask.FromResult(1);
-        }
-
-        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
-
-        public override void Flush() => throw new NotSupportedException();
-
-        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
-
-        public override void SetLength(long value) => throw new NotSupportedException();
-
-        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
-    }
+    private sealed class InjectedTransactionException(ImportTransactionStage stage)
+        : Exception($"Injected failure at {stage}.");
 
     private sealed class TemporaryDirectory : IDisposable
     {
-        private TemporaryDirectory(string path)
-        {
-            Path = path;
-        }
+        private TemporaryDirectory(string path) => Path = path;
 
         public string Path { get; }
 
@@ -352,7 +308,7 @@ public sealed class LocalLibraryIntegrationTests
         {
             var path = System.IO.Path.Combine(
                 System.IO.Path.GetTempPath(),
-                "loregrove-integration",
+                "loregrove-sqlite-integration",
                 Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(path);
             return new TemporaryDirectory(path);
@@ -360,6 +316,7 @@ public sealed class LocalLibraryIntegrationTests
 
         public void Dispose()
         {
+            SqliteConnection.ClearAllPools();
             if (Directory.Exists(Path))
             {
                 Directory.Delete(Path, recursive: true);

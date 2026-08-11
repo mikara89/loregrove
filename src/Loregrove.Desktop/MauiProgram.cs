@@ -1,7 +1,10 @@
 using Loregrove.Application.Client;
 using Loregrove.Application.Platform;
 using Loregrove.Application.Security;
+using Loregrove.Application.Storage;
 using Loregrove.Infrastructure.Desktop;
+using Loregrove.Infrastructure.LocalFiles;
+using Loregrove.Infrastructure.Sqlite;
 using Microsoft.Extensions.Logging;
 using Microsoft.FluentUI.AspNetCore.Components;
 
@@ -37,11 +40,26 @@ public static class MauiProgram
         builder.Services.AddSingleton<IDesktopDropAdapter, UnavailableDesktopDropAdapter>();
         builder.Services.AddSingleton<ISecretStore, UnavailableSecretStore>();
 
+        var libraryPaths = new LocalLibraryPaths(Path.Combine(FileSystem.AppDataDirectory, "Library"));
+        builder.Services.AddSingleton<ILibraryPaths>(libraryPaths);
+        builder.Services.AddSingleton<ILibraryDirectoryInitializer, LocalLibraryInitializer>();
+        builder.Services.AddSingleton<IObjectStore, LocalObjectStore>();
+        builder.Services.AddLoregroveSqlite(libraryPaths.Database);
+
 #if DEBUG
         builder.Services.AddBlazorWebViewDeveloperTools();
         builder.Logging.AddDebug();
 #endif
 
-        return builder.Build();
+        var app = builder.Build();
+        using (var scope = app.Services.CreateScope())
+        {
+            scope.ServiceProvider.GetRequiredService<ILibraryInitializer>()
+                .InitializeAsync(CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
+        }
+
+        return app;
     }
 }

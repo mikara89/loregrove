@@ -12,6 +12,7 @@ public sealed class LocalLibraryPaths : ILibraryPaths
         }
 
         Root = Path.GetFullPath(root);
+        Database = Path.Combine(Root, "library.db");
         Objects = Path.Combine(Root, "objects");
         Artifacts = Path.Combine(Root, "artifacts");
         Indexes = Path.Combine(Root, "indexes");
@@ -20,6 +21,8 @@ public sealed class LocalLibraryPaths : ILibraryPaths
     }
 
     public string Root { get; }
+
+    public string Database { get; }
 
     public string Objects { get; }
 

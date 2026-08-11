@@ -3,8 +3,8 @@
 Loregrove is a local-first personal knowledge compiler.
 
 This repository contains the production architecture, desktop shell, and local evidence-library
-foundation. Streamed content-addressed source capture is implemented; SQLite persistence, parsing,
-search, AI, Docling, and knowledge extraction are not implemented yet.
+foundation. Streamed content-addressed source capture and durable SQLite metadata/jobs are
+implemented; parsing, search, AI, Docling, and knowledge extraction are not implemented yet.
 
 ## Current targets
 
@@ -75,5 +75,6 @@ dotnet build src/Loregrove.Desktop/Loregrove.Desktop.csproj -f net10.0-windows10
 
 See [production boundaries](docs/architecture/production-boundaries.md),
 [local source capture](docs/architecture/source-capture.md),
+[SQLite persistence](docs/architecture/sqlite-persistence.md),
 [Windows validation debt](docs/platform/windows-validation.md), and
 [macOS validation debt](docs/platform/macos-validation.md) for the current implementation status.
