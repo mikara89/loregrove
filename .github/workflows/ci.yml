@@ -31,19 +31,23 @@ jobs:
         with:
           global-json-file: global.json
       - run: dotnet workload install maui
-      - run: dotnet restore src/Loregrove.Desktop/Loregrove.Desktop.csproj
-      - run: dotnet build src/Loregrove.Desktop/Loregrove.Desktop.csproj -f net10.0-windows10.0.19041.0 -c Release --no-restore
+      - run: dotnet restore src/Loregrove.Desktop/Loregrove.Desktop.csproj -p:Configuration=Release -p:RuntimeIdentifierOverride=win-x64
+      - run: dotnet build src/Loregrove.Desktop/Loregrove.Desktop.csproj -f net10.0-windows10.0.19041.0 -c Release --no-restore -p:RuntimeIdentifierOverride=win-x64
       - run: dotnet test Loregrove.Core.slnx -c Release
 
   macos:
     name: Mac Catalyst build
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
+      - name: Select Xcode 26.6
+        run: |
+          sudo xcode-select --switch /Applications/Xcode_26.6.app/Contents/Developer
+          xcodebuild -version
       - run: dotnet workload install maui
-      - run: dotnet restore src/Loregrove.Desktop/Loregrove.Desktop.csproj -p:RuntimeIdentifier=maccatalyst-x64
-      - run: dotnet build src/Loregrove.Desktop/Loregrove.Desktop.csproj -f net10.0-maccatalyst -c Release --no-restore -p:RuntimeIdentifier=maccatalyst-x64 -p:EnableCodeSigning=false
+      - run: dotnet restore src/Loregrove.Desktop/Loregrove.Desktop.csproj
+      - run: dotnet build src/Loregrove.Desktop/Loregrove.Desktop.csproj -f net10.0-maccatalyst -c Release --no-restore -p:EnableCodeSigning=false
       - run: dotnet test Loregrove.Core.slnx -c Release

@@ -40,11 +40,19 @@ public sealed class DependencyRulesTests
         var project = LoadProject(projectName);
         var actual = project
             .Descendants("ProjectReference")
-            .Select(reference => Path.GetFileNameWithoutExtension(reference.Attribute("Include")?.Value))
+            .Select(reference => ProjectNameFromReference(reference.Attribute("Include")?.Value))
             .Order(StringComparer.Ordinal)
             .ToArray();
 
         Assert.Equal(expectedReferences.Order(StringComparer.Ordinal), actual);
+    }
+
+    [Theory]
+    [InlineData("..\\Loregrove.Application\\Loregrove.Application.csproj")]
+    [InlineData("../Loregrove.Application/Loregrove.Application.csproj")]
+    public void ProjectReferenceParsingIsIndependentOfDirectorySeparator(string projectReference)
+    {
+        Assert.Equal("Loregrove.Application", ProjectNameFromReference(projectReference));
     }
 
     [Theory]
@@ -121,6 +129,12 @@ public sealed class DependencyRulesTests
     }
 
     private static XDocument LoadProject(string projectName) => XDocument.Load(ProjectPath(projectName));
+
+    private static string ProjectNameFromReference(string? projectReference)
+    {
+        var normalized = (projectReference ?? string.Empty).Replace('\\', '/');
+        return Path.GetFileNameWithoutExtension(normalized);
+    }
 
     private static string ProjectPath(string projectName) =>
         Path.Combine(RepositoryRoot, "src", projectName, $"{projectName}.csproj");
