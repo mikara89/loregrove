@@ -15,6 +15,8 @@
 | Database | SQLite |
 | Search | FTS5 + managed vector index MVP |
 | Files | Content-addressed local storage |
+| Source object identity | Lowercase SHA-256 with `<prefix>/<hash>` keys |
+| Capture transaction | Finalize object first; document + version + pending job commit atomically later |
 | AI runtimes | User-managed; Loregrove only calls configured providers |
 | Docling | Optional on-demand managed child process or remote |
 | Knowledge truth model | Evidence separate from generated interpretation |

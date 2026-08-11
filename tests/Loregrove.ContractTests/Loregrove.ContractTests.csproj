@@ -19,6 +19,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Loregrove.Application\Loregrove.Application.csproj" />
     <ProjectReference Include="..\..\src\Loregrove.Infrastructure.Desktop\Loregrove.Infrastructure.Desktop.csproj" />
+    <ProjectReference Include="..\..\src\Loregrove.Infrastructure.LocalFiles\Loregrove.Infrastructure.LocalFiles.csproj" />
   </ItemGroup>
 
 </Project>

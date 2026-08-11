@@ -46,16 +46,25 @@ or serialization boundary inside the desktop application.
 
 ## Current implementation boundary
 
-Prompt 01 intentionally provides only:
+Prompt 01 provides:
 
 - the stable UI-facing facade and placeholder area clients;
 - host-neutral desktop, drop, and secret-store contracts;
 - a shared Fluent UI shell and seven primary routes;
-- safe placeholder Infrastructure modules;
+- safe placeholder Infrastructure modules other than local files;
 - MAUI composition for Windows and Mac Catalyst.
 
-SQLite entities, document models, parsing, search, embeddings, provider SDKs, Docling process
-management, and knowledge extraction are deferred to later milestones.
+Prompt 02 adds:
+
+- strongly typed source document, immutable version, and pending processing-job concepts;
+- stream-neutral import orchestration and atomic metadata repository boundary;
+- idempotent local library initialization;
+- crash-safe SHA-256 content-addressed object storage in `Infrastructure.LocalFiles`;
+- exact duplicate, cancellation, and concurrent-write behavior.
+
+SQLite entities and migrations, parsing, search, embeddings, provider SDKs, Docling process
+management, and knowledge extraction remain deferred to later milestones. See
+[local source capture](source-capture.md) for the capture and future transaction semantics.
 
 ## Pinned baseline
 
