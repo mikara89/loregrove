@@ -31,8 +31,8 @@ jobs:
         with:
           global-json-file: global.json
       - run: dotnet workload install maui
-      - run: dotnet restore src/Loregrove.Desktop/Loregrove.Desktop.csproj -p:RuntimeIdentifierOverride=win10-x64
-      - run: dotnet build src/Loregrove.Desktop/Loregrove.Desktop.csproj -f net10.0-windows10.0.19041.0 -c Release --no-restore -p:RuntimeIdentifierOverride=win10-x64
+      - run: dotnet restore src/Loregrove.Desktop/Loregrove.Desktop.csproj -p:RuntimeIdentifierOverride=win-x64
+      - run: dotnet build src/Loregrove.Desktop/Loregrove.Desktop.csproj -f net10.0-windows10.0.19041.0 -c Release --no-restore -p:RuntimeIdentifierOverride=win-x64
       - run: dotnet test Loregrove.Core.slnx -c Release
 
   macos:
