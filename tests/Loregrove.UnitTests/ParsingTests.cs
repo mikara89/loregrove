@@ -208,6 +208,25 @@ public sealed class ParsingTests
     }
 
     [Fact]
+    public async Task MarkdownParserMapsThousandsOfBlocksWithPrecomputedLinePositions()
+    {
+        const int blockCount = 5_000;
+        var markdown = string.Join(
+            "\n\n",
+            Enumerable.Range(1, blockCount).Select(index => $"Paragraph {index}."));
+
+        var result = await ParseMarkdownAsync(markdown);
+
+        Assert.Equal(blockCount, result.Blocks.Count);
+        Assert.Equal("Paragraph 1.", result.Blocks[0].Text);
+        Assert.Equal($"Paragraph {blockCount}.", result.Blocks[^1].Text);
+        var first = Assert.IsType<MarkdownSourceLocator>(result.Blocks[0].Locator);
+        var last = Assert.IsType<MarkdownSourceLocator>(result.Blocks[^1].Locator);
+        Assert.Equal((1, 1), (first.StartLine, first.EndLine));
+        Assert.Equal((blockCount * 2 - 1, blockCount * 2 - 1), (last.StartLine, last.EndLine));
+    }
+
+    [Fact]
     public async Task MarkdownLinksImagesAndRawHtmlStayLocalSourceObservations()
     {
         const string markdown = """

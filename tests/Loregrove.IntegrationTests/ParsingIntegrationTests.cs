@@ -350,6 +350,44 @@ public sealed class ParsingIntegrationTests
         }
     }
 
+    [Fact]
+    public async Task DatabaseRejectsAnchorWhoseVersionDoesNotOwnArtifact()
+    {
+        using var directory = new TemporaryDirectory();
+        await using var services = BuildServices(directory.Path);
+        await InitializeAsync(services);
+        var artifactVersionId = await ImportAsync(
+            services,
+            "Artifact source",
+            "artifact.txt",
+            "text/plain",
+            "evidence");
+        await ParseAsync(services, artifactVersionId);
+        var contradictoryVersionId = await ImportAsync(
+            services,
+            "Contradictory source",
+            "contradictory.txt",
+            "text/plain",
+            "other evidence");
+
+        await using var scope = services.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<LoregroveDbContext>();
+        var existing = await context.SourceAnchors.AsNoTracking().SingleAsync();
+        context.SourceAnchors.Add(new SourceAnchor(
+            SourceAnchorId.New(),
+            existing.ParsedArtifactId,
+            contradictoryVersionId,
+            existing.Ordinal + 1,
+            existing.Kind,
+            existing.LocatorKind,
+            existing.LocatorSchemaVersion,
+            existing.LocatorJson,
+            existing.NormalizedText,
+            existing.NormalizedTextHash));
+
+        await Assert.ThrowsAsync<DbUpdateException>(() => context.SaveChangesAsync());
+    }
+
     [Theory]
     [InlineData(ParseTransactionStage.AfterParserSuccess, false)]
     [InlineData(ParseTransactionStage.AfterArtifactFinalized, true)]

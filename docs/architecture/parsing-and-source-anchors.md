@@ -66,7 +66,8 @@ Prompt 05 provides two in-process parsers:
 - TXT: BOM-aware Unicode/strict UTF-8 line reading, LF-normalized paragraph text, blank-line
   paragraph boundaries, and 1-based original line ranges;
 - Markdown: Markdig CommonMark AST parsing for headings, paragraphs, list items, block quotes,
-  fenced/indented code, and raw HTML observations.
+  fenced/indented code, and raw HTML observations. A line-start index is built once and block end
+  offsets are resolved by binary search rather than rescanning the source per block.
 
 Empty TXT is a valid zero-block artifact. Invalid UTF-8, NUL content, and strongly binary-like
 control-character input fail safely. Markdown links and images retain useful link/alt text without
@@ -96,6 +97,8 @@ properties, and malformed payloads; public evidence reads return typed locators 
 fingerprint/parser fingerprint, schema version, artifact hash/object key, relational creation time,
 block count, and current flag. `SourceAnchor` records its typed ID, artifact and source version IDs,
 ordinal, block kind, locator kind/schema/JSON, normalized text, and SHA-256 normalized-text hash.
+SQLite enforces `(ParsedArtifactId, DocumentVersionId) -> ParsedArtifact(Id, DocumentVersionId)` as
+a composite foreign key, so an anchor cannot claim a source version different from its artifact.
 
 The normalized JSON excludes creation timestamps and absolute paths. `Utf8JsonWriter` writes fields
 in a fixed order, metadata in ordinal key order, blocks in ordinal order, and compact UTF-8

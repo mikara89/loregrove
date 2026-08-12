@@ -12,6 +12,8 @@ public partial class DurableParsedArtifactsAndSourceAnchors : Migration
         ["DocumentVersionId", "ParserFingerprint"];
 
     private static readonly string[] ArtifactOrdinalColumns = ["ParsedArtifactId", "Ordinal"];
+    private static readonly string[] ArtifactVersionColumns = ["Id", "DocumentVersionId"];
+    private static readonly string[] AnchorArtifactVersionColumns = ["ParsedArtifactId", "DocumentVersionId"];
 
     /// <inheritdoc />
     protected override void Up(MigrationBuilder migrationBuilder)
@@ -44,6 +46,9 @@ public partial class DurableParsedArtifactsAndSourceAnchors : Migration
             constraints: table =>
             {
                 table.PrimaryKey("PK_ParsedArtifacts", x => x.Id);
+                table.UniqueConstraint(
+                    "AK_ParsedArtifacts_Id_DocumentVersionId",
+                    x => new { x.Id, x.DocumentVersionId });
                 table.ForeignKey(
                     name: "FK_ParsedArtifacts_SourceDocumentVersions_DocumentVersionId",
                     column: x => x.DocumentVersionId,
@@ -71,10 +76,10 @@ public partial class DurableParsedArtifactsAndSourceAnchors : Migration
             {
                 table.PrimaryKey("PK_SourceAnchors", x => x.Id);
                 table.ForeignKey(
-                    name: "FK_SourceAnchors_ParsedArtifacts_ParsedArtifactId",
-                    column: x => x.ParsedArtifactId,
+                    name: "FK_SourceAnchors_ParsedArtifacts_ParsedArtifactId_DocumentVersionId",
+                    columns: x => new { x.ParsedArtifactId, x.DocumentVersionId },
                     principalTable: "ParsedArtifacts",
-                    principalColumn: "Id",
+                    principalColumns: ArtifactVersionColumns,
                     onDelete: ReferentialAction.Restrict);
                 table.ForeignKey(
                     name: "FK_SourceAnchors_SourceDocumentVersions_DocumentVersionId",
@@ -106,6 +111,11 @@ public partial class DurableParsedArtifactsAndSourceAnchors : Migration
             name: "IX_SourceAnchors_ParsedArtifactId",
             table: "SourceAnchors",
             column: "ParsedArtifactId");
+
+        migrationBuilder.CreateIndex(
+            name: "IX_SourceAnchors_ParsedArtifactId_DocumentVersionId",
+            table: "SourceAnchors",
+            columns: AnchorArtifactVersionColumns);
 
         migrationBuilder.CreateIndex(
             name: "IX_SourceAnchors_ParsedArtifactId_Ordinal",

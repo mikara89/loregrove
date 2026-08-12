@@ -53,13 +53,14 @@ public sealed class MarkdownDocumentParser : IDocumentParser
         cancellationToken.ThrowIfCancellationRequested();
 
         var normalizedSource = markdown.Replace("\r\n", "\n", StringComparison.Ordinal).Replace('\r', '\n');
+        var lineStarts = BuildLineStarts(normalizedSource);
         var document = Markdown.Parse(normalizedSource, _pipeline);
         var blocks = new List<ParsedBlock>();
         var headings = new List<string>();
         foreach (var block in document)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            AddBlock(block, normalizedSource, headings, blocks, cancellationToken);
+            AddBlock(block, normalizedSource, lineStarts, headings, blocks, cancellationToken);
         }
 
         return new ParsedDocumentResult(Descriptor, blocks, new Dictionary<string, string>());
@@ -68,6 +69,7 @@ public sealed class MarkdownDocumentParser : IDocumentParser
     private static void AddBlock(
         Block block,
         string source,
+        int[] lineStarts,
         List<string> headings,
         List<ParsedBlock> blocks,
         CancellationToken cancellationToken)
@@ -93,7 +95,7 @@ public sealed class MarkdownDocumentParser : IDocumentParser
                 }
 
                 headings.Add(headingText);
-                AddObservation(ParsedBlockKind.Heading, headingText, heading, source, headings, blocks);
+                AddObservation(ParsedBlockKind.Heading, headingText, heading, source, lineStarts, headings, blocks);
                 break;
 
             case ParagraphBlock paragraph:
@@ -102,6 +104,7 @@ public sealed class MarkdownDocumentParser : IDocumentParser
                     NormalizeProse(InlineText(paragraph.Inline)),
                     paragraph,
                     source,
+                    lineStarts,
                     headings,
                     blocks);
                 break;
@@ -109,7 +112,7 @@ public sealed class MarkdownDocumentParser : IDocumentParser
             case ListBlock list:
                 foreach (var item in list.OfType<ListItemBlock>())
                 {
-                    AddListItem(item, source, headings, blocks, cancellationToken);
+                    AddListItem(item, source, lineStarts, headings, blocks, cancellationToken);
                 }
 
                 break;
@@ -120,6 +123,7 @@ public sealed class MarkdownDocumentParser : IDocumentParser
                     NormalizeProse(ExtractContainerText(quote)),
                     quote,
                     source,
+                    lineStarts,
                     headings,
                     blocks);
                 break;
@@ -130,6 +134,7 @@ public sealed class MarkdownDocumentParser : IDocumentParser
                     NormalizeCode(ExtractCode(code, source)),
                     code,
                     source,
+                    lineStarts,
                     headings,
                     blocks);
                 break;
@@ -140,6 +145,7 @@ public sealed class MarkdownDocumentParser : IDocumentParser
                     NormalizeProse(Slice(html, source)),
                     html,
                     source,
+                    lineStarts,
                     headings,
                     blocks);
                 break;
@@ -147,7 +153,7 @@ public sealed class MarkdownDocumentParser : IDocumentParser
             case ContainerBlock container:
                 foreach (var child in container)
                 {
-                    AddBlock(child, source, headings, blocks, cancellationToken);
+                    AddBlock(child, source, lineStarts, headings, blocks, cancellationToken);
                 }
 
                 break;
@@ -157,6 +163,7 @@ public sealed class MarkdownDocumentParser : IDocumentParser
     private static void AddListItem(
         ListItemBlock item,
         string source,
+        int[] lineStarts,
         List<string> headings,
         List<ParsedBlock> blocks,
         CancellationToken cancellationToken)
@@ -171,6 +178,7 @@ public sealed class MarkdownDocumentParser : IDocumentParser
             NormalizeProse(directText),
             item,
             source,
+            lineStarts,
             headings,
             blocks);
 
@@ -179,7 +187,7 @@ public sealed class MarkdownDocumentParser : IDocumentParser
             foreach (var nestedItem in nested.OfType<ListItemBlock>())
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                AddListItem(nestedItem, source, headings, blocks, cancellationToken);
+                AddListItem(nestedItem, source, lineStarts, headings, blocks, cancellationToken);
             }
         }
     }
@@ -189,6 +197,7 @@ public sealed class MarkdownDocumentParser : IDocumentParser
         string text,
         Block sourceBlock,
         string source,
+        int[] lineStarts,
         IReadOnlyList<string> headings,
         List<ParsedBlock> blocks)
     {
@@ -205,7 +214,7 @@ public sealed class MarkdownDocumentParser : IDocumentParser
             text,
             new MarkdownSourceLocator(
                 sourceBlock.Line + 1,
-                LineForOffset(source, sourceBlock.Span.End),
+                LineForOffset(lineStarts, source.Length, sourceBlock.Span.End),
                 ordinal,
                 path),
             path));
@@ -293,19 +302,25 @@ public sealed class MarkdownDocumentParser : IDocumentParser
         return source.Substring(block.Span.Start, length);
     }
 
-    private static int LineForOffset(string source, int offset)
+    private static int[] BuildLineStarts(string source)
     {
-        var bounded = Math.Min(Math.Max(offset, 0), Math.Max(source.Length - 1, 0));
-        var line = 1;
-        for (var index = 0; index <= bounded && index < source.Length; index++)
+        var lineStarts = new List<int> { 0 };
+        for (var index = 0; index < source.Length; index++)
         {
             if (source[index] == '\n')
             {
-                line++;
+                lineStarts.Add(index + 1);
             }
         }
 
-        return line;
+        return [.. lineStarts];
+    }
+
+    private static int LineForOffset(int[] lineStarts, int sourceLength, int offset)
+    {
+        var bounded = Math.Min(Math.Max(offset, 0), Math.Max(sourceLength - 1, 0));
+        var index = Array.BinarySearch(lineStarts, bounded + 1);
+        return index >= 0 ? index + 1 : ~index;
     }
 
     private static string NormalizeProse(string value) => string.Join(

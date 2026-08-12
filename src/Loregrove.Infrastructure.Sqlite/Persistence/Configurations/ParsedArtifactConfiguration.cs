@@ -10,6 +10,7 @@ public sealed class ParsedArtifactConfiguration : IEntityTypeConfiguration<Parse
     {
         builder.ToTable("ParsedArtifacts");
         builder.HasKey(artifact => artifact.Id);
+        builder.HasAlternateKey(artifact => new { artifact.Id, artifact.DocumentVersionId });
         builder.Property(artifact => artifact.Id)
             .HasConversion(id => id.Value, value => new ParsedArtifactId(value))
             .ValueGeneratedNever();

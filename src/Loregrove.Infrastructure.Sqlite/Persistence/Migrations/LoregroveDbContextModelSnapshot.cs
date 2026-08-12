@@ -164,6 +164,8 @@ namespace Loregrove.Infrastructure.Sqlite.Persistence.Migrations
 
                     b.HasIndex("ParsedArtifactId");
 
+                    b.HasIndex("ParsedArtifactId", "DocumentVersionId");
+
                     b.HasIndex("ParsedArtifactId", "Ordinal")
                         .IsUnique();
 
@@ -273,7 +275,8 @@ namespace Loregrove.Infrastructure.Sqlite.Persistence.Migrations
 
                     b.HasOne("Loregrove.Domain.Sources.ParsedArtifact", null)
                         .WithMany()
-                        .HasForeignKey("ParsedArtifactId")
+                        .HasForeignKey("ParsedArtifactId", "DocumentVersionId")
+                        .HasPrincipalKey("Id", "DocumentVersionId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });

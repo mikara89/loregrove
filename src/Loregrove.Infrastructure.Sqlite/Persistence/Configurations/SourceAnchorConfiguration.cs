@@ -32,7 +32,8 @@ public sealed class SourceAnchorConfiguration : IEntityTypeConfiguration<SourceA
         builder.HasIndex(anchor => anchor.DocumentVersionId);
         builder.HasOne<ParsedArtifact>()
             .WithMany()
-            .HasForeignKey(anchor => anchor.ParsedArtifactId)
+            .HasForeignKey(anchor => new { anchor.ParsedArtifactId, anchor.DocumentVersionId })
+            .HasPrincipalKey(artifact => new { artifact.Id, artifact.DocumentVersionId })
             .OnDelete(DeleteBehavior.Restrict);
         builder.HasOne<SourceDocumentVersion>()
             .WithMany()
