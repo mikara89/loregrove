@@ -92,6 +92,84 @@ public sealed class DoclingRealProcessTests(ITestOutputHelper output)
         output.WriteLine("real Docling smoke: EXECUTED");
     }
 
+    [Fact]
+    public async Task MissingPackEntryPointProducesTypedLaunchFailureAfterTwoAttempts()
+    {
+        using var locationDirectory = new TemporaryDirectory();
+        var location = new DoclingPackLocation(locationDirectory.Path);
+        var manifest = CreateManifest("missing-pack-launcher");
+        var control = new HttpDoclingControlClient();
+        var manager = new DoclingProcessManager(
+            new DoclingConfiguration { Mode = DoclingMode.ManagedLocal },
+            new DoclingSupervisorOptions
+            {
+                StartupTimeout = TimeSpan.FromMilliseconds(100),
+                ReadinessProbeTimeout = TimeSpan.FromMilliseconds(20),
+                ReadinessPollInterval = TimeSpan.FromMilliseconds(5),
+                IdleTimeout = TimeSpan.FromSeconds(1),
+                GracefulShutdownTimeout = TimeSpan.FromMilliseconds(20),
+                ForcedKillTimeout = TimeSpan.FromMilliseconds(20),
+            },
+            new FixedLocator(location),
+            new FixedValidator(location, manifest),
+            new DoclingCommandBuilder(),
+            new LoopbackPortAllocator(),
+            new SystemChildProcessLauncher(),
+            control,
+            control);
+        await using (manager)
+        using (control)
+        {
+            var exception = await Assert.ThrowsAsync<DoclingProcessException>(
+                () => manager.EnsureReadyAsync(CancellationToken.None));
+
+            Assert.Equal(DoclingFailureCode.ProcessLaunchFailed, exception.Code);
+            Assert.Equal(DoclingProcessState.Faulted, manager.GetSnapshot().State);
+            Assert.Null(manager.GetSnapshot().ProcessId);
+        }
+    }
+
+    [Fact]
+    public async Task RealChildIgnoringGracefulShutdownUsesOwnedTreeKillFallback()
+    {
+        var executable = FindTestHostExecutable();
+        var location = new DoclingPackLocation(Path.GetDirectoryName(executable)!);
+        var manifest = CreateManifest(Path.GetFileName(executable));
+        var control = new HttpDoclingControlClient();
+        var capturingLauncher = new CapturingLauncher(new SystemChildProcessLauncher());
+        var manager = new DoclingProcessManager(
+            new DoclingConfiguration { Mode = DoclingMode.ManagedLocal },
+            new DoclingSupervisorOptions
+            {
+                StartupTimeout = TimeSpan.FromSeconds(3),
+                ReadinessProbeTimeout = TimeSpan.FromMilliseconds(100),
+                ReadinessPollInterval = TimeSpan.FromMilliseconds(10),
+                IdleTimeout = TimeSpan.FromSeconds(3),
+                GracefulShutdownTimeout = TimeSpan.FromMilliseconds(50),
+                ForcedKillTimeout = TimeSpan.FromSeconds(2),
+            },
+            new FixedLocator(location),
+            new FixedValidator(location, manifest),
+            new AdditionalArgumentsCommandBuilder(
+                new DoclingCommandBuilder(),
+                ["--ignore-shutdown"]),
+            new LoopbackPortAllocator(),
+            capturingLauncher,
+            control,
+            control);
+        await using (manager)
+        using (control)
+        {
+            await manager.EnsureReadyAsync(CancellationToken.None);
+            await manager.StopAsync(CancellationToken.None);
+
+            var child = Assert.IsType<CapturingChildProcess>(capturingLauncher.LastProcess);
+            Assert.Equal(1, child.KillTreeCalls);
+            Assert.True(child.HasExited);
+            Assert.Equal(DoclingProcessState.Stopped, manager.GetSnapshot().State);
+        }
+    }
+
     private static DoclingProcessingPackManifest CreateManifest(string entryPoint) =>
         new(
             SchemaVersion: 1,
@@ -191,6 +269,20 @@ public sealed class DoclingRealProcessTests(ITestOutputHelper output)
         }
     }
 
+    private sealed class AdditionalArgumentsCommandBuilder(
+        IDoclingCommandBuilder inner,
+        IReadOnlyList<string> additionalArguments) : IDoclingCommandBuilder
+    {
+        public DoclingProcessStartSpec Build(
+            DoclingPackLocation location,
+            DoclingProcessingPackManifest manifest,
+            int port)
+        {
+            var startSpec = inner.Build(location, manifest, port);
+            return startSpec with { Arguments = [.. startSpec.Arguments, .. additionalArguments] };
+        }
+    }
+
     private sealed class CapturingLauncher(IChildProcessLauncher inner) : IChildProcessLauncher
     {
         internal IChildProcess? LastProcess { get; private set; }
@@ -223,5 +315,21 @@ public sealed class DoclingRealProcessTests(ITestOutputHelper output)
         }
 
         public ValueTask DisposeAsync() => inner.DisposeAsync();
+    }
+
+    private sealed class TemporaryDirectory : IDisposable
+    {
+        internal TemporaryDirectory()
+        {
+            Path = System.IO.Path.Combine(
+                System.IO.Path.GetTempPath(),
+                "loregrove-docling-real-tests",
+                Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(Path);
+        }
+
+        internal string Path { get; }
+
+        public void Dispose() => Directory.Delete(Path, recursive: true);
     }
 }

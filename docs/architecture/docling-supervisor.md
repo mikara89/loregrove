@@ -74,8 +74,8 @@ An explicit but missing override does not fall through. The locator never checks
 Validation is read-only and occurs before process launch. It checks manifest presence and strict
 JSON shape, supported schema/command contract/runtime, sane bounded version fields, relative paths,
 the entry point, and every declared required file. It reports present, missing, incompatible, or
-corrupt without hashing a multi-gigabyte pack. Deep checksum verification can be an explicit future
-operation.
+corrupt through `IDoclingPackInspector` without starting a process or hashing a multi-gigabyte pack.
+Deep checksum verification can be an explicit future operation.
 
 ## Pack launcher contract
 
@@ -174,7 +174,9 @@ Shutdown is ordered:
 
 The implementation never scans or kills by executable name. Singleton synchronous or asynchronous
 disposal runs the same bounded shutdown sequence when the desktop service provider is disposed, so
-normal MAUI host shutdown does not intentionally leave the child running.
+normal MAUI host shutdown does not intentionally leave the child running. If even the owned-tree kill
+cannot confirm exit, the manager retains that generation as owned and refuses to launch a replacement;
+a later stop/demand retries bounded cleanup instead of creating two children.
 
 ## Diagnostics and privacy
 

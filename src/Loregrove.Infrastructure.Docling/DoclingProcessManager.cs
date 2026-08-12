@@ -140,7 +140,12 @@ internal sealed class DoclingProcessManager : IDoclingProcessManager, IDisposabl
         }
     }
 
-    public async Task StopAsync(CancellationToken cancellationToken)
+    public Task StopAsync(CancellationToken cancellationToken) =>
+        StopCoreAsync(rejectQueuedLeases: true, cancellationToken);
+
+    private async Task StopCoreAsync(
+        bool rejectQueuedLeases,
+        CancellationToken cancellationToken)
     {
         Task stopTask;
         await _lifecycleGate.WaitAsync(cancellationToken);
@@ -160,7 +165,11 @@ internal sealed class DoclingProcessManager : IDoclingProcessManager, IDisposabl
             {
                 TransitionLocked(DoclingProcessState.Stopping, _ownedProcess);
                 CancelIdleCountdownLocked();
-                _leaseAdmissionCancellation.Cancel();
+                if (rejectQueuedLeases)
+                {
+                    _leaseAdmissionCancellation.Cancel();
+                }
+
                 _runCancellation?.Cancel();
 
                 var completion = new TaskCompletionSource(
@@ -222,6 +231,7 @@ internal sealed class DoclingProcessManager : IDoclingProcessManager, IDisposabl
             Task? stopTask = null;
             Task<DoclingReadyEndpoint>? startupTask = null;
             DoclingReadyEndpoint? ready = null;
+            var requiresOwnedProcessCleanup = false;
 
             await _lifecycleGate.WaitAsync(cancellationToken);
             try
@@ -251,7 +261,15 @@ internal sealed class DoclingProcessManager : IDoclingProcessManager, IDisposabl
                 }
                 else
                 {
-                    if (_startupTask is null || _startupTask.IsCompleted)
+                    if (_startupTask is { IsCompleted: false })
+                    {
+                        startupTask = _startupTask;
+                    }
+                    else if (_ownedProcess is not null)
+                    {
+                        requiresOwnedProcessCleanup = true;
+                    }
+                    else
                     {
                         _runCancellation?.Dispose();
                         _runCancellation = CancellationTokenSource.CreateLinkedTokenSource(
@@ -259,9 +277,9 @@ internal sealed class DoclingProcessManager : IDoclingProcessManager, IDisposabl
                         TransitionLocked(DoclingProcessState.Starting, ownedProcess: null);
                         _startupTask = StartWithRestartAsync(_runCancellation.Token);
                         _ = ObserveStartupCompletionAsync(_startupTask);
+                        startupTask = _startupTask;
                     }
 
-                    startupTask = _startupTask;
                 }
             }
             finally
@@ -278,6 +296,14 @@ internal sealed class DoclingProcessManager : IDoclingProcessManager, IDisposabl
             if (ready is not null)
             {
                 return ready;
+            }
+
+            if (requiresOwnedProcessCleanup)
+            {
+                await StopCoreAsync(
+                    rejectQueuedLeases: false,
+                    cancellationToken);
+                continue;
             }
 
             return await startupTask!.WaitAsync(cancellationToken);
@@ -438,7 +464,10 @@ internal sealed class DoclingProcessManager : IDoclingProcessManager, IDisposabl
                 }
             }
             catch (Exception exception) when (
-                exception is InvalidOperationException or IOException or UnauthorizedAccessException)
+                exception is InvalidOperationException or
+                    IOException or
+                    UnauthorizedAccessException or
+                    System.ComponentModel.Win32Exception)
             {
                 lastFailure = Failure(
                     DoclingFailureCode.ProcessLaunchFailed,
@@ -873,7 +902,9 @@ internal sealed class DoclingProcessManager : IDoclingProcessManager, IDisposabl
 
             if (shouldStop)
             {
-                await StopAsync(CancellationToken.None);
+                await StopCoreAsync(
+                    rejectQueuedLeases: false,
+                    CancellationToken.None);
             }
         }
         catch (OperationCanceledException)

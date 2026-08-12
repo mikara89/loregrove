@@ -48,6 +48,26 @@ public sealed class DoclingProcessingPackTests
     }
 
     [Fact]
+    public async Task InspectorReportsMissingWithoutStartingOrModifyingAnything()
+    {
+        using var application = new TemporaryDirectory();
+        var locator = new FileSystemDoclingPackLocator(new DoclingConfiguration
+        {
+            ApplicationBasePath = application.Path,
+            DeveloperPackOverridePath = Path.Combine(application.Path, "absent"),
+        });
+        var inspector = new DoclingPackInspector(locator, new FileSystemDoclingPackValidator());
+
+        var result = await inspector.InspectAsync(CancellationToken.None);
+
+        Assert.Equal(DoclingPackAvailability.Missing, result.Availability);
+        Assert.Equal("pack-missing", result.DiagnosticCode);
+        Assert.Null(result.Location);
+        Assert.Null(result.Manifest);
+        Assert.Empty(Directory.EnumerateFileSystemEntries(application.Path));
+    }
+
+    [Fact]
     public async Task ValidatorRejectsMissingManifestAsCorrupt()
     {
         using var pack = new TemporaryDirectory();
@@ -74,6 +94,81 @@ public sealed class DoclingProcessingPackTests
 
         Assert.Equal(DoclingPackAvailability.Incompatible, result.Availability);
         Assert.Equal("manifest-schema-unsupported", result.DiagnosticCode);
+    }
+
+    [Fact]
+    public async Task ValidatorRejectsUnsupportedCommandContract()
+    {
+        using var pack = new TemporaryDirectory();
+        await WriteManifestAsync(pack.Path, CreateManifest() with { CommandContractVersion = 2 });
+        var validator = new FileSystemDoclingPackValidator();
+
+        var result = await validator.ValidateAsync(
+            new DoclingPackLocation(pack.Path),
+            CancellationToken.None);
+
+        Assert.Equal(DoclingPackAvailability.Incompatible, result.Availability);
+        Assert.Equal("command-contract-unsupported", result.DiagnosticCode);
+    }
+
+    [Fact]
+    public async Task ValidatorRejectsMalformedManifest()
+    {
+        using var pack = new TemporaryDirectory();
+        await File.WriteAllTextAsync(Path.Combine(pack.Path, "manifest.json"), "{not-json");
+        var validator = new FileSystemDoclingPackValidator();
+
+        var result = await validator.ValidateAsync(
+            new DoclingPackLocation(pack.Path),
+            CancellationToken.None);
+
+        Assert.Equal(DoclingPackAvailability.Corrupt, result.Availability);
+        Assert.Equal("manifest-json-invalid", result.DiagnosticCode);
+    }
+
+    [Fact]
+    public async Task ValidatorRejectsInvalidVersionFields()
+    {
+        using var pack = new TemporaryDirectory();
+        await WriteManifestAsync(pack.Path, CreateManifest() with { DoclingVersion = "not valid!" });
+        var validator = new FileSystemDoclingPackValidator();
+
+        var result = await validator.ValidateAsync(
+            new DoclingPackLocation(pack.Path),
+            CancellationToken.None);
+
+        Assert.Equal(DoclingPackAvailability.Corrupt, result.Availability);
+        Assert.Equal("version-invalid", result.DiagnosticCode);
+    }
+
+    [Fact]
+    public async Task ValidatorRejectsMissingRequiredRuntimeFile()
+    {
+        var currentRuntime = DoclingRuntimeIdentifier.Current;
+        if (currentRuntime is null)
+        {
+            return;
+        }
+
+        using var pack = new TemporaryDirectory();
+        var entryPoint = OperatingSystem.IsWindows() ? "pack-launcher.exe" : "pack-launcher";
+        await File.WriteAllTextAsync(Path.Combine(pack.Path, entryPoint), "test");
+        await WriteManifestAsync(
+            pack.Path,
+            CreateManifest() with
+            {
+                RuntimeIdentifier = currentRuntime,
+                EntryPoint = entryPoint,
+                RequiredFiles = ["runtime/missing.file"],
+            });
+        var validator = new FileSystemDoclingPackValidator();
+
+        var result = await validator.ValidateAsync(
+            new DoclingPackLocation(pack.Path),
+            CancellationToken.None);
+
+        Assert.Equal(DoclingPackAvailability.Corrupt, result.Availability);
+        Assert.Equal("required-file-missing", result.DiagnosticCode);
     }
 
     [Fact]

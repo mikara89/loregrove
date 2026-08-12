@@ -234,6 +234,32 @@ public sealed class DoclingSupervisorTests
     }
 
     [Fact]
+    public async Task WorkArrivingDuringIdleStopWaitsThenStartsOneCleanReplacement()
+    {
+        var context = CreateManager(
+            new FakeProcessBehavior(GracefulShutdownDelay: TimeSpan.FromMilliseconds(80)),
+            new FakeProcessBehavior(),
+            idleTimeout: TimeSpan.FromMilliseconds(30),
+            gracefulTimeout: TimeSpan.FromMilliseconds(200));
+        await using var manager = context.Manager;
+        long firstGeneration;
+        await using (var lease = await manager.AcquireAsync(CancellationToken.None))
+        {
+            firstGeneration = lease.GenerationId;
+        }
+
+        await WaitUntilAsync(
+            () => manager.GetSnapshot().State == DoclingProcessState.Stopping,
+            TimeSpan.FromSeconds(1));
+        await using var replacement = await manager.AcquireAsync(CancellationToken.None);
+
+        Assert.NotEqual(firstGeneration, replacement.GenerationId);
+        Assert.Equal(2, context.Harness.LaunchCount);
+        Assert.Equal(1, context.Harness.Processes.Count(process => !process.HasExited));
+        Assert.Equal(0, context.Harness.KillTreeCalls);
+    }
+
+    [Fact]
     public async Task ConcurrentStopIsIdempotentAndGraceful()
     {
         var context = CreateManager();
@@ -269,6 +295,21 @@ public sealed class DoclingSupervisorTests
     }
 
     [Fact]
+    public async Task StopWhileBusyInvalidatesLeaseAndStopsOwnedGeneration()
+    {
+        var context = CreateManager(idleTimeout: TimeSpan.FromSeconds(2));
+        await using var manager = context.Manager;
+        await using var lease = await manager.AcquireAsync(CancellationToken.None);
+
+        await manager.StopAsync(CancellationToken.None);
+
+        Assert.False(lease.IsValid);
+        Assert.True(context.Harness.Processes[0].HasExited);
+        Assert.Equal(DoclingProcessState.Stopped, manager.GetSnapshot().State);
+        Assert.Equal(1, context.Harness.LaunchCount);
+    }
+
+    [Fact]
     public async Task SynchronousHostDisposalStopsActiveOwnedProcess()
     {
         var context = CreateManager(idleTimeout: TimeSpan.FromSeconds(2));
@@ -295,6 +336,39 @@ public sealed class DoclingSupervisorTests
         Assert.Equal(1, context.Harness.ShutdownRequests);
         Assert.Equal(1, context.Harness.KillTreeCalls);
         Assert.Equal(DoclingProcessState.Stopped, manager.GetSnapshot().State);
+    }
+
+    [Fact]
+    public async Task FailedKillNeverAllowsASecondOwnedProcess()
+    {
+        var context = CreateManager(
+            new FakeProcessBehavior(
+                IgnoreGracefulShutdown: true,
+                IgnoreKill: true),
+            gracefulTimeout: TimeSpan.FromMilliseconds(20),
+            forcedKillTimeout: TimeSpan.FromMilliseconds(20));
+        var manager = context.Manager;
+        await manager.EnsureReadyAsync(CancellationToken.None);
+
+        var stopFailure = await Assert.ThrowsAsync<DoclingProcessException>(
+            () => manager.StopAsync(CancellationToken.None));
+        var restartFailure = await Assert.ThrowsAsync<DoclingProcessException>(
+            () => manager.EnsureReadyAsync(CancellationToken.None));
+
+        Assert.Equal(DoclingFailureCode.ShutdownFailed, stopFailure.Code);
+        Assert.Equal(DoclingFailureCode.ShutdownFailed, restartFailure.Code);
+        Assert.Equal(DoclingProcessState.Faulted, manager.GetSnapshot().State);
+        Assert.Equal(1, context.Harness.LaunchCount);
+        Assert.Equal(2, context.Harness.KillTreeCalls);
+
+        context.Harness.Processes[0].Exit(-1);
+        var recovered = await manager.EnsureReadyAsync(CancellationToken.None);
+
+        Assert.Equal(2, context.Harness.LaunchCount);
+        Assert.Equal(recovered.GenerationId, manager.GetSnapshot().GenerationId);
+
+        await manager.StopAsync(CancellationToken.None);
+        await manager.DisposeAsync();
     }
 
     [Fact]
@@ -341,6 +415,20 @@ public sealed class DoclingSupervisorTests
         Assert.DoesNotContain("*", command.Arguments);
     }
 
+    [Fact]
+    public async Task ExplicitDiagnosticPortIsUsedWithoutChangingLoopbackHost()
+    {
+        const int ConfiguredPort = 43127;
+        var context = CreateManager(configuredPort: ConfiguredPort);
+        await using var manager = context.Manager;
+
+        var endpoint = await manager.EnsureReadyAsync(CancellationToken.None);
+
+        Assert.Equal(ConfiguredPort, endpoint.Endpoint.Port);
+        Assert.Equal("127.0.0.1", endpoint.Endpoint.Host);
+        Assert.Equal(0, context.Harness.PortAllocationCount);
+    }
+
     private static ManagerContext CreateManager(
         FakeProcessBehavior? firstBehavior = null,
         FakeProcessBehavior? secondBehavior = null,
@@ -348,7 +436,9 @@ public sealed class DoclingSupervisorTests
         bool packPresent = true,
         TimeSpan? startupTimeout = null,
         TimeSpan? idleTimeout = null,
-        TimeSpan? gracefulTimeout = null)
+        TimeSpan? gracefulTimeout = null,
+        TimeSpan? forcedKillTimeout = null,
+        int configuredPort = 0)
     {
         var behaviors = new[] { firstBehavior, secondBehavior }
             .Where(behavior => behavior is not null)
@@ -365,10 +455,10 @@ public sealed class DoclingSupervisorTests
             ReadinessPollInterval = TimeSpan.FromMilliseconds(5),
             IdleTimeout = idleTimeout ?? TimeSpan.FromSeconds(1),
             GracefulShutdownTimeout = gracefulTimeout ?? TimeSpan.FromMilliseconds(50),
-            ForcedKillTimeout = TimeSpan.FromMilliseconds(100),
+            ForcedKillTimeout = forcedKillTimeout ?? TimeSpan.FromMilliseconds(100),
         };
         var manager = new DoclingProcessManager(
-            new DoclingConfiguration { Mode = mode },
+            new DoclingConfiguration { Mode = mode, Port = configuredPort },
             options,
             locator,
             validator,
@@ -416,7 +506,9 @@ public sealed class DoclingSupervisorTests
         TimeSpan? ReadyDelay = null,
         bool NeverReady = false,
         bool CrashImmediately = false,
-        bool IgnoreGracefulShutdown = false);
+        bool IgnoreGracefulShutdown = false,
+        bool IgnoreKill = false,
+        TimeSpan? GracefulShutdownDelay = null);
 
     private sealed class StubPackLocator(DoclingPackLocation? location) : IDoclingPackLocator
     {
@@ -457,6 +549,7 @@ public sealed class DoclingSupervisorTests
         private readonly ConcurrentQueue<FakeProcessBehavior> _behaviors;
         private readonly ConcurrentDictionary<int, FakeChildProcess> _processesByPort = new();
         private int _nextPort = 41000;
+        private int _portAllocationCount;
         private int _launchCount;
         private int _shutdownRequests;
         private int _killTreeCalls;
@@ -472,11 +565,17 @@ public sealed class DoclingSupervisorTests
 
         internal int KillTreeCalls => Volatile.Read(ref _killTreeCalls);
 
+        internal int PortAllocationCount => Volatile.Read(ref _portAllocationCount);
+
         internal List<FakeChildProcess> Processes { get; } = [];
 
         internal List<DoclingProcessStartSpec> StartSpecs { get; } = [];
 
-        public int Allocate() => Interlocked.Increment(ref _nextPort);
+        public int Allocate()
+        {
+            Interlocked.Increment(ref _portAllocationCount);
+            return Interlocked.Increment(ref _nextPort);
+        }
 
         public DoclingProcessStartSpec Build(
             DoclingPackLocation location,
@@ -526,21 +625,26 @@ public sealed class DoclingSupervisorTests
             return Task.FromResult(process.IsReady);
         }
 
-        public Task<bool> RequestShutdownAsync(Uri endpoint, CancellationToken cancellationToken)
+        public async Task<bool> RequestShutdownAsync(Uri endpoint, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
             Interlocked.Increment(ref _shutdownRequests);
             if (!_processesByPort.TryGetValue(endpoint.Port, out var process) || process.HasExited)
             {
-                return Task.FromResult(true);
+                return true;
             }
 
             if (!process.Behavior.IgnoreGracefulShutdown)
             {
+                if (process.Behavior.GracefulShutdownDelay is { } delay)
+                {
+                    await Task.Delay(delay, cancellationToken);
+                }
+
                 process.Exit(0);
             }
 
-            return Task.FromResult(true);
+            return true;
         }
     }
 
@@ -576,7 +680,10 @@ public sealed class DoclingSupervisorTests
         public void KillTree()
         {
             _onKill();
-            Exit(-1);
+            if (!Behavior.IgnoreKill)
+            {
+                Exit(-1);
+            }
         }
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;

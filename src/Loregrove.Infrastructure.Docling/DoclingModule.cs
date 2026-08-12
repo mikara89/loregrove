@@ -22,6 +22,7 @@ public static class DoclingModule
         services.AddSingleton(supervisorOptions);
         services.AddSingleton<IDoclingPackLocator, FileSystemDoclingPackLocator>();
         services.AddSingleton<IDoclingPackValidator, FileSystemDoclingPackValidator>();
+        services.AddSingleton<IDoclingPackInspector, DoclingPackInspector>();
         services.AddSingleton<IDoclingCommandBuilder, DoclingCommandBuilder>();
         services.AddSingleton<ILoopbackPortAllocator, LoopbackPortAllocator>();
         services.AddSingleton<IChildProcessLauncher, SystemChildProcessLauncher>();

@@ -72,6 +72,38 @@ public interface IDoclingPackValidator
         CancellationToken cancellationToken);
 }
 
+public interface IDoclingPackInspector
+{
+    Task<DoclingPackValidationResult> InspectAsync(CancellationToken cancellationToken);
+}
+
+public sealed class DoclingPackInspector : IDoclingPackInspector
+{
+    private readonly IDoclingPackLocator _locator;
+    private readonly IDoclingPackValidator _validator;
+
+    public DoclingPackInspector(
+        IDoclingPackLocator locator,
+        IDoclingPackValidator validator)
+    {
+        _locator = locator;
+        _validator = validator;
+    }
+
+    public async Task<DoclingPackValidationResult> InspectAsync(
+        CancellationToken cancellationToken)
+    {
+        var location = await _locator.LocateAsync(cancellationToken);
+        return location is null
+            ? new(
+                DoclingPackAvailability.Missing,
+                Location: null,
+                Manifest: null,
+                DiagnosticCode: "pack-missing")
+            : await _validator.ValidateAsync(location, cancellationToken);
+    }
+}
+
 internal static class DoclingRuntimeIdentifier
 {
     internal static readonly string[] Supported = ["win-x64", "osx-x64", "osx-arm64"];
@@ -183,6 +215,10 @@ public sealed class FileSystemDoclingPackValidator : IDoclingPackValidator
             return Invalid(location, "manifest-json-invalid");
         }
         catch (IOException)
+        {
+            return Invalid(location, "manifest-unreadable");
+        }
+        catch (UnauthorizedAccessException)
         {
             return Invalid(location, "manifest-unreadable");
         }
