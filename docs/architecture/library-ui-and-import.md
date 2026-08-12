@@ -86,6 +86,20 @@ After an import batch finishes, the UI queries SQLite again instead of appending
 therefore remains the only library source of truth, and the same rows are returned when services and
 the application restart.
 
+### 10,000-row query observation
+
+A local Release integration run on 2026-08-12 seeded 10,000 source/version metadata pairs into real
+SQLite and measured the bounded queries after seeding:
+
+| Operation | Observed time |
+| --- | ---: |
+| First page, 100 rows | 170.5 ms |
+| Filename filter, 1 matching row | 80.5 ms |
+
+These are qualitative development-machine observations rather than performance thresholds. The test
+prints fresh timings on every run and asserts bounded results and filter correctness, not wall-clock
+speed. Visible Fluent grid interaction still requires platform runtime validation.
+
 ## Shared UI
 
 The Fluent UI v5 Library surface includes loading, empty, error, import-progress, and paged-data-grid

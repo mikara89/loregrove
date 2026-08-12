@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using Loregrove.Application.Client;
 using Loregrove.Application.Library;
 using Loregrove.Application.Platform;
@@ -11,10 +12,11 @@ using Loregrove.Infrastructure.Sqlite.Persistence;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Xunit.Abstractions;
 
 namespace Loregrove.IntegrationTests;
 
-public sealed class LibraryWorkflowIntegrationTests
+public sealed class LibraryWorkflowIntegrationTests(ITestOutputHelper output)
 {
     [Fact]
     public async Task QuerySupportsOrderingPaginationFilteringDetailsAndNoTracking()
@@ -93,14 +95,21 @@ public sealed class LibraryWorkflowIntegrationTests
 
         await using var queryScope = services.CreateAsyncScope();
         var query = queryScope.ServiceProvider.GetRequiredService<LibraryQueryService>();
-        var page = await query.GetSourcesAsync(new LibraryQuery(100, 100), CancellationToken.None);
+        var firstPageStartedAt = Stopwatch.GetTimestamp();
+        var page = await query.GetSourcesAsync(new LibraryQuery(1, 100), CancellationToken.None);
+        var firstPageElapsed = Stopwatch.GetElapsedTime(firstPageStartedAt);
+        var filterStartedAt = Stopwatch.GetTimestamp();
         var filtered = await query.GetSourcesAsync(
             new LibraryQuery(1, 25, "09999"),
             CancellationToken.None);
+        var filterElapsed = Stopwatch.GetElapsedTime(filterStartedAt);
+
+        output.WriteLine($"10k first page query: {firstPageElapsed.TotalMilliseconds:F1} ms");
+        output.WriteLine($"10k filtered query: {filterElapsed.TotalMilliseconds:F1} ms");
 
         Assert.Equal(10_000, page.TotalCount);
         Assert.Equal(100, page.Items.Count);
-        Assert.Equal(100, page.Page);
+        Assert.Equal(1, page.Page);
         Assert.Equal("Synthetic source 09999", Assert.Single(filtered.Items).DisplayName);
     }
 

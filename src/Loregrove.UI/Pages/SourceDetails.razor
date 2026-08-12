@@ -16,8 +16,16 @@
     else if (_details is null)
     {
         <div class="message-state" role="alert">
-            <h1>Source not found</h1>
-            <p>This source is not present in the current local library.</p>
+            @if (_error is null)
+            {
+                <h1>Source not found</h1>
+                <p>This source is not present in the current local library.</p>
+            }
+            else
+            {
+                <h1>Source details could not be loaded</h1>
+                <p>@_error</p>
+            }
         </div>
     }
     else
@@ -48,38 +56,35 @@
     [Parameter]
     public Guid DocumentId { get; set; }
 
-    private CancellationTokenSource? _cancellation;
+    private readonly LatestRequestRunner<LibrarySourceDetails?> _loadRequests = new();
     private LibrarySourceDetails? _details;
+    private string? _error;
     private bool _loading = true;
 
     protected override async Task OnParametersSetAsync()
     {
-        _cancellation?.Cancel();
-        _cancellation?.Dispose();
-        _cancellation = new CancellationTokenSource();
-        _loading = true;
-
-        try
-        {
-            _details = await Client.Library.GetSourceAsync(
-                new SourceDocumentId(DocumentId),
-                _cancellation.Token);
-        }
-        catch (OperationCanceledException) when (_cancellation.IsCancellationRequested)
-        {
-        }
-        finally
-        {
-            _loading = false;
-        }
+        var documentId = new SourceDocumentId(DocumentId);
+        await _loadRequests.RunAsync(
+            cancellationToken => Client.Library.GetSourceAsync(documentId, cancellationToken),
+            details => _details = details,
+            () =>
+            {
+                _loading = true;
+                _error = null;
+            },
+            _ =>
+            {
+                _details = null;
+                _error = "Please return to the Library and try again.";
+            },
+            () => _loading = false);
     }
 
     private void BackToLibrary() => Navigation.NavigateTo("/library");
 
     public ValueTask DisposeAsync()
     {
-        _cancellation?.Cancel();
-        _cancellation?.Dispose();
+        _loadRequests.Dispose();
         return ValueTask.CompletedTask;
     }
 }

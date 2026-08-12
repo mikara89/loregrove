@@ -10,6 +10,20 @@ Prompt 04 implements the MAUI multi-file picker and the production Library grid.
 Windows target build proves API and composition compatibility only; the interactive picker and
 restart smoke steps below still require a visible desktop session.
 
+## Prompt 04 runtime observation — 2026-08-12
+
+The Release application launched in a visible Windows session and remained responsive. The native
+picker imported the following sources from a directory whose name contained spaces:
+
+- `Résumé notes.md`;
+- a 107-character text filename.
+
+Direct inspection of the production SQLite library confirmed both Unicode/long filename rows and
+their immutable objects. Loregrove was closed, relaunched, and remained responsive; the same durable
+rows were still present in SQLite after restart. This is runtime evidence for picker access, capture,
+and restart durability. Picker cancellation and a recorded visual confirmation of the rows after
+restart remain open rather than being inferred from database inspection.
+
 ```mermaid
 flowchart LR
     BUILD[Production Windows build] --> LAUNCH[Visible launch]
@@ -29,8 +43,9 @@ flowchart LR
 - [ ] Validate user-entered filtering.
 - [ ] Validate grid selection.
 - [ ] Validate an interactive graph-node callback when the production graph exists.
-- [ ] Exercise the file picker.
-- [ ] Import one file, multiple files, a long filename, a Unicode filename, and a file under a path containing spaces.
+- [x] Exercise the file picker.
+- [x] Import a long filename, a Unicode filename, and files under a path containing spaces.
+- [ ] Record separate one-file and multi-file selection observations.
 - [ ] Cancel the picker and confirm no synthetic import result is created.
 - [ ] Close and reopen Loregrove and confirm imported rows remain visible.
 - [ ] Exercise the folder picker.

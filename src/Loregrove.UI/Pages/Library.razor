@@ -147,9 +147,9 @@
 
 @code {
     private readonly Dictionary<int, ImportProgress> _progressItems = [];
+    private readonly LatestRequestRunner<LibraryPage> _loadRequests = new();
     private LibraryPage? _page;
     private ImportFilesResult? _lastImportResult;
-    private CancellationTokenSource? _loadCancellation;
     private CancellationTokenSource? _importCancellation;
     private string? _searchText = string.Empty;
     private string? _error;
@@ -172,29 +172,17 @@
 
     private async Task LoadAsync()
     {
-        _loadCancellation?.Cancel();
-        _loadCancellation?.Dispose();
-        _loadCancellation = new CancellationTokenSource();
-        _loading = true;
-        _error = null;
-
-        try
-        {
-            _page = await Client.Library.GetSourcesAsync(
-                new LibraryQuery(_currentPage, 50, _searchText),
-                _loadCancellation.Token);
-        }
-        catch (OperationCanceledException) when (_loadCancellation.IsCancellationRequested)
-        {
-        }
-        catch
-        {
-            _error = "Please try again. No source data was changed.";
-        }
-        finally
-        {
-            _loading = false;
-        }
+        var query = new LibraryQuery(_currentPage, 50, _searchText);
+        await _loadRequests.RunAsync(
+            cancellationToken => Client.Library.GetSourcesAsync(query, cancellationToken),
+            page => _page = page,
+            () =>
+            {
+                _loading = true;
+                _error = null;
+            },
+            _ => _error = "Please try again. No source data was changed.",
+            () => _loading = false);
     }
 
     private async Task SearchChangedAsync()
@@ -280,8 +268,7 @@
 
     public ValueTask DisposeAsync()
     {
-        _loadCancellation?.Cancel();
-        _loadCancellation?.Dispose();
+        _loadRequests.Dispose();
         _importCancellation?.Cancel();
         _importCancellation?.Dispose();
         return ValueTask.CompletedTask;
