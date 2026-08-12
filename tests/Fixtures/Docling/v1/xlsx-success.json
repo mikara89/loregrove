@@ -1,0 +1,9 @@
+{
+  "schema_name": "DoclingDocument",
+  "version": "1.0.0",
+  "body": { "self_ref": "#/body", "children": [{ "$ref": "#/groups/0" }] },
+  "furniture": { "self_ref": "#/furniture", "children": [] },
+  "tables": [], "pictures": [], "key_value_items": [],
+  "groups": [{ "self_ref": "#/groups/0", "label": "sheet", "name": "Summary", "children": [{ "$ref": "#/texts/0" }] }],
+  "texts": [{ "self_ref": "#/texts/0", "label": "paragraph", "text": "Workbook prose", "children": [], "prov": [] }]
+}

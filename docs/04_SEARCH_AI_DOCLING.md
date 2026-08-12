@@ -63,6 +63,11 @@ Before remote processing, tell the user that document chunks may be sent to the 
 
 Default after optional processing pack is installed: ManagedLocal.
 
+Prompt 07 implements ManagedLocal and Remote conversion for PDF, DOCX, PPTX, XLSX, PNG, JPEG,
+TIFF, BMP, and WEBP. Disabled and OneShot are typed deferred availability states. Remote conversion
+requires explicit whole-document upload consent, an allowed endpoint, and any configured credential
+from OS-backed secret storage. There is no automatic fallback between modes.
+
 ### Managed lifecycle
 
 ```mermaid
@@ -99,7 +104,7 @@ Initial constraints:
 
 ### Packaging
 
-Loregrove Core and Docling Processing Pack are separate installation/update units. Users do not manually install Python. Remote Docling is also supported.
+Loregrove Core and Docling Processing Pack are separate installation/update units. Users do not manually install Python. Remote Docling uses the same pinned Serve v1 adapter and evidence mapper without local process ownership.
 
 
 ## Presentation independence

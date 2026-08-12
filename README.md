@@ -4,10 +4,11 @@ Loregrove is a local-first personal knowledge compiler.
 
 This repository contains the production architecture, desktop shell, and local evidence-library
 foundation. The shared Fluent Library supports native multi-file selection, bounded durable imports,
-duplicate reporting, paged/filterable SQLite results, and source metadata details. Captured TXT and
-Markdown sources can now be parsed into immutable deterministic artifacts and structured Tier-2
-source anchors. The optional Docling Processing Pack now has a managed local lifecycle boundary, but
-document conversion is intentionally deferred. Search, AI, and knowledge extraction are not implemented yet.
+duplicate reporting, paged/filterable SQLite results, and source metadata details. Captured TXT,
+Markdown, PDF, DOCX, PPTX, XLSX, and common image sources can be parsed into immutable deterministic
+artifacts and typed Tier-2 source anchors. Complex formats use the optional managed local Docling
+Processing Pack or an explicitly consented remote Docling endpoint; XLSX additionally preserves its
+Open XML structure. Search, AI, and knowledge extraction are not implemented yet.
 
 ## Current targets
 
@@ -83,5 +84,6 @@ See [production boundaries](docs/architecture/production-boundaries.md),
 [Library UI and source import](docs/architecture/library-ui-and-import.md),
 [parsing and source anchors](docs/architecture/parsing-and-source-anchors.md),
 [managed Docling supervisor](docs/architecture/docling-supervisor.md),
+[Docling conversion and complex-format anchors](docs/architecture/docling-conversion.md),
 [Windows validation debt](docs/platform/windows-validation.md), and
 [macOS validation debt](docs/platform/macos-validation.md) for the current implementation status.

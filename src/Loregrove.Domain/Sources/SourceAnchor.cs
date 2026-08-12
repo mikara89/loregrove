@@ -8,12 +8,20 @@ public enum ParsedBlockKind
     BlockQuote = 3,
     Code = 4,
     PlainText = 5,
+    Table = 6,
+    Formula = 7,
+    Caption = 8,
 }
 
 public enum SourceLocatorKind
 {
     Text = 0,
     Markdown = 1,
+    PagedRegion = 2,
+    StructuredDocument = 3,
+    Presentation = 4,
+    ImageRegion = 5,
+    Spreadsheet = 6,
 }
 
 /// <summary>

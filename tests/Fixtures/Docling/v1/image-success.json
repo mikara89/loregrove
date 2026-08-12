@@ -1,0 +1,10 @@
+{
+  "schema_name": "DoclingDocument",
+  "version": "1.0.0",
+  "body": { "self_ref": "#/body", "children": [{ "$ref": "#/pictures/0" }] },
+  "furniture": { "self_ref": "#/furniture", "children": [] },
+  "groups": [], "tables": [], "key_value_items": [],
+  "pages": { "1": { "page_no": 1, "size": { "width": 800, "height": 600 } } },
+  "pictures": [{ "self_ref": "#/pictures/0", "label": "picture", "children": [{ "$ref": "#/texts/0" }], "prov": [] }],
+  "texts": [{ "self_ref": "#/texts/0", "label": "text", "text": "OCR evidence", "children": [], "prov": [{ "page_no": 1, "bbox": { "l": 10, "t": 20, "r": 210, "b": 60, "coord_origin": "TOPLEFT" }, "charspan": [0, 12] }] }]
+}

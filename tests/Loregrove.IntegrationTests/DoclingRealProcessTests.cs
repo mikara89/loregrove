@@ -1,5 +1,14 @@
 using Loregrove.Application.Docling;
+using Loregrove.Application.Parsing;
+using Loregrove.Application.Persistence;
+using Loregrove.Application.Sources;
+using Loregrove.Application.Storage;
+using Loregrove.Domain.Sources;
 using Loregrove.Infrastructure.Docling;
+using Loregrove.Infrastructure.LocalFiles;
+using Loregrove.Infrastructure.Sqlite;
+using Loregrove.Infrastructure.Sqlite.Persistence;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit.Abstractions;
 
@@ -74,22 +83,55 @@ public sealed class DoclingRealProcessTests(ITestOutputHelper output)
             string.IsNullOrWhiteSpace(packPath),
             "LOREGROVE_DOCLING_PACK must identify the real pack when the smoke test is enabled.");
 
+        using var library = new TemporaryDirectory();
+        var paths = new LocalLibraryPaths(library.Path);
         var services = new ServiceCollection();
+        services.AddSingleton<ILibraryPaths>(paths);
+        services.AddSingleton<ILibraryDirectoryInitializer, LocalLibraryInitializer>();
+        services.AddSingleton<IObjectStore, LocalObjectStore>();
+        services.AddSingleton<IArtifactStore, LocalArtifactStore>();
+        services.AddLoregroveParsing();
         services.AddLoregroveDocling(configuration =>
         {
             configuration.Mode = DoclingMode.ManagedLocal;
             configuration.DeveloperPackOverridePath = packPath;
         });
+        services.AddLoregroveSqlite(paths.Database);
         await using var provider = services.BuildServiceProvider();
         var manager = provider.GetRequiredService<IDoclingProcessManager>();
-
-        await using (var lease = await manager.AcquireAsync(CancellationToken.None))
+        using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+        await provider.GetRequiredService<ILibraryInitializer>().InitializeAsync(timeout.Token);
+        SourceDocumentVersionId versionId;
+        await using (var scope = provider.CreateAsyncScope())
+        await using (var pdf = new MemoryStream(CreateMinimalPdf(), writable: false))
         {
-            Assert.Equal("127.0.0.1", lease.Endpoint.Host);
+            var imported = await scope.ServiceProvider.GetRequiredService<ImportSourceService>().ImportAsync(
+                new ImportSourceCommand("Smoke PDF", "smoke.pdf", "application/pdf", pdf),
+                timeout.Token);
+            versionId = imported.VersionId;
         }
 
-        await manager.StopAsync(CancellationToken.None);
-        output.WriteLine("real Docling smoke: EXECUTED");
+        ParseSourceResult result;
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            result = await scope.ServiceProvider.GetRequiredService<ParseSourceService>()
+                .ParseAsync(versionId, timeout.Token);
+        }
+
+        Assert.Equal(ParseSourceDisposition.Parsed, result.Disposition);
+        await using (var scope = provider.CreateAsyncScope())
+        {
+            var context = scope.ServiceProvider.GetRequiredService<LoregroveDbContext>();
+            Assert.Equal(1, await context.ParsedArtifacts.CountAsync(timeout.Token));
+            var anchors = await context.SourceAnchors.AsNoTracking().ToListAsync(timeout.Token);
+            Assert.NotEmpty(anchors);
+            Assert.Contains(anchors, anchor => anchor.LocatorKind == SourceLocatorKind.PagedRegion &&
+                anchor.NormalizedText.Contains("Loregrove smoke evidence", StringComparison.OrdinalIgnoreCase));
+            Assert.Contains(anchors, anchor => anchor.LocatorJson.Contains("boundingBox", StringComparison.Ordinal));
+        }
+
+        await manager.StopAsync(timeout.Token);
+        output.WriteLine("real Docling smoke: EXECUTED (immutable object -> managed Docling -> artifact -> paged anchor)");
     }
 
     [Fact]
@@ -198,6 +240,39 @@ public sealed class DoclingRealProcessTests(ITestOutputHelper output)
             executableName);
         Assert.True(File.Exists(executable), $"Docling test host was not built: {executable}");
         return executable;
+    }
+
+    private static byte[] CreateMinimalPdf()
+    {
+        const string content = "BT /F1 24 Tf 72 720 Td (Loregrove smoke evidence) Tj ET\n";
+        var objects = new[]
+        {
+            "<< /Type /Catalog /Pages 2 0 R >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>",
+            $"<< /Length {System.Text.Encoding.Latin1.GetByteCount(content)} >>\nstream\n{content}endstream",
+            "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+        };
+        var builder = new System.Text.StringBuilder("%PDF-1.4\n%âãÏÓ\n");
+        var offsets = new List<int>();
+        foreach (var (value, index) in objects.Select((value, index) => (value, index)))
+        {
+            offsets.Add(System.Text.Encoding.Latin1.GetByteCount(builder.ToString()));
+            builder.Append(index + 1).Append(" 0 obj\n").Append(value).Append("\nendobj\n");
+        }
+
+        var xrefOffset = System.Text.Encoding.Latin1.GetByteCount(builder.ToString());
+        builder.Append("xref\n0 6\n0000000000 65535 f \n");
+        foreach (var offset in offsets)
+        {
+            builder.Append(offset.ToString("D10", System.Globalization.CultureInfo.InvariantCulture))
+                .Append(" 00000 n \n");
+        }
+
+        builder.Append("trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n")
+            .Append(xrefOffset)
+            .Append("\n%%EOF\n");
+        return System.Text.Encoding.Latin1.GetBytes(builder.ToString());
     }
 
     private static string FindRepositoryRoot()

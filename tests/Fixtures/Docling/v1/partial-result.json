@@ -1,0 +1,17 @@
+{
+  "status": "partial_success",
+  "document": {
+    "md_content": "# Partial\r\n",
+    "json_content": {
+      "schema_name": "DoclingDocument",
+      "version": "1.0.0",
+      "body": { "self_ref": "#/body", "children": [{ "$ref": "#/texts/0" }] },
+      "furniture": { "self_ref": "#/furniture", "children": [] },
+      "groups": [], "tables": [], "pictures": [], "key_value_items": [],
+      "texts": [{ "self_ref": "#/texts/0", "label": "paragraph", "text": "Partial evidence", "children": [], "prov": [] }]
+    }
+  },
+  "processing_time": 9.9,
+  "timings": { "volatile": 1 },
+  "errors": [{ "message": "not persisted" }]
+}

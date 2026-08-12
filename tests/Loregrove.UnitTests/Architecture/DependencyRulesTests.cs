@@ -109,6 +109,28 @@ public sealed class DependencyRulesTests
     }
 
     [Fact]
+    public void ApplicationHasNoDoclingHttpContractOrProcessImplementation()
+    {
+        foreach (var token in new[]
+        {
+            "v1/convert",
+            "MultipartFormDataContent",
+            "System.Diagnostics.Process",
+            "DocumentFormat.OpenXml",
+        })
+        {
+            AssertSourceDoesNotContain("Loregrove.Application", token);
+        }
+    }
+
+    [Fact]
+    public void DomainHasNoHttpOrOpenXmlDependency()
+    {
+        AssertSourceDoesNotContain("Loregrove.Domain", "System.Net.Http");
+        AssertSourceDoesNotContain("Loregrove.Domain", "DocumentFormat.OpenXml");
+    }
+
+    [Fact]
     public void SharedUiDoesNotResolvePersistenceOrOpenFiles()
     {
         foreach (var token in new[]
@@ -122,6 +144,8 @@ public sealed class DependencyRulesTests
             "CreateAsyncScope",
             "IDocumentParser",
             "IArtifactStore",
+            "IObjectStore",
+            "HttpClient",
             "TextDocumentParser",
             "MarkdownDocumentParser",
         })

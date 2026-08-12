@@ -59,11 +59,28 @@ public sealed class ParseSourceService(
                 Message: "No parser is available for this source format.");
         }
 
+        if (parser is IDocumentParserAvailability availabilityProvider)
+        {
+            var availability = await availabilityProvider.GetAvailabilityAsync(descriptor, cancellationToken)
+                .ConfigureAwait(false);
+            if (availability.State == ParserAvailabilityState.Deferred)
+            {
+                return new ParseSourceResult(
+                    ParseSourceDisposition.Deferred,
+                    Message: "The document processor is currently unavailable.",
+                    DeferredReason: availability.Reason);
+            }
+        }
+
+        var parserDescriptor = parser is IDocumentParserDescriptorProvider descriptorProvider
+            ? await descriptorProvider.GetDescriptorAsync(descriptor, cancellationToken).ConfigureAwait(false)
+            : parser.Descriptor;
+
         var existing = await dbContext.ParsedArtifacts
             .AsNoTracking()
             .Where(artifact =>
                 artifact.DocumentVersionId == versionId &&
-                artifact.ParserFingerprint == parser.Descriptor.Fingerprint)
+                artifact.ParserFingerprint == parserDescriptor.Fingerprint)
             .Select(artifact => (ParsedArtifactId?)artifact.Id)
             .SingleOrDefaultAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -74,12 +91,12 @@ public sealed class ParseSourceService(
 
         var claimed = await TryClaimAsync(
             versionId,
-            parser.Descriptor.Fingerprint,
+            parserDescriptor.Fingerprint,
             retryOnly,
             cancellationToken).ConfigureAwait(false);
         if (!claimed)
         {
-            return await ResolveUnclaimedAsync(versionId, parser.Descriptor.Fingerprint, retryOnly, cancellationToken)
+            return await ResolveUnclaimedAsync(versionId, parserDescriptor.Fingerprint, retryOnly, cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -101,6 +118,14 @@ public sealed class ParseSourceService(
             await MarkFailedAsync(versionId, message).ConfigureAwait(false);
             return new ParseSourceResult(ParseSourceDisposition.Failed, Message: message);
         }
+        catch (ParserInfrastructureException exception)
+        {
+            await ReturnToPendingAsync(versionId).ConfigureAwait(false);
+            return new ParseSourceResult(
+                ParseSourceDisposition.RetryableFailure,
+                Message: "Document processing was interrupted and can be retried.",
+                InfrastructureFailureCode: exception.Code);
+        }
         catch
         {
             await ReturnToPendingAsync(versionId).ConfigureAwait(false);
@@ -109,7 +134,7 @@ public sealed class ParseSourceService(
 
         try
         {
-            ValidateResult(parsed, parser.Descriptor);
+            ValidateResult(parsed, parserDescriptor);
             await _transactionHook.OnStageAsync(
                 ParseTransactionStage.AfterParserSuccess,
                 cancellationToken).ConfigureAwait(false);
@@ -217,7 +242,10 @@ public sealed class ParseSourceService(
             stored.ObjectKey,
             now,
             parsed.Blocks.Count,
-            isCurrent: true);
+            isCurrent: true,
+            parsed.Completeness,
+            parsed.WarningCount,
+            parsed.SafeDiagnosticCode);
         var anchors = parsed.Blocks.Select(block => new SourceAnchor(
             SourceAnchorId.New(),
             artifactId,
@@ -293,7 +321,8 @@ public sealed class ParseSourceService(
             .AsNoTracking()
             .SingleAsync(item => item.DocumentVersionId == versionId, cancellationToken)
             .ConfigureAwait(false);
-        if (job.State == ProcessingJobState.Processing)
+        if (job.State == ProcessingJobState.Processing ||
+            (!retryOnly && job.State == ProcessingJobState.Pending))
         {
             return new ParseSourceResult(ParseSourceDisposition.Busy);
         }
@@ -365,6 +394,26 @@ public sealed class ParseSourceService(
         if (result.Parser != expected)
         {
             throw new InvalidOperationException("The parser result descriptor did not match the selected parser.");
+        }
+
+        ArgumentOutOfRangeException.ThrowIfNegative(result.WarningCount);
+        if (result.SafeDiagnosticCode?.Length > 128)
+        {
+            throw new InvalidOperationException("The parser diagnostic code is too long.");
+        }
+
+        if (result.Representations is { } representations)
+        {
+            if (representations.Select(item => item.Name).Distinct(StringComparer.Ordinal).Count() != representations.Count)
+            {
+                throw new InvalidOperationException("Parser representation names must be unique.");
+            }
+
+            foreach (var representation in representations)
+            {
+                ArgumentException.ThrowIfNullOrWhiteSpace(representation.Name);
+                ArgumentNullException.ThrowIfNull(representation.Content);
+            }
         }
 
         for (var ordinal = 0; ordinal < result.Blocks.Count; ordinal++)

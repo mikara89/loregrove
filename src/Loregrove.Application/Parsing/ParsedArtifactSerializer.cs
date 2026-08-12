@@ -41,6 +41,38 @@ public static class ParsedArtifactSerializer
             }
 
             writer.WriteEndObject();
+            if (result.Parser.OutputSchemaVersion >= 2 && result.Representations is { Count: > 0 })
+            {
+                writer.WritePropertyName("representations");
+                writer.WriteStartObject();
+                foreach (var representation in result.Representations.OrderBy(item => item.Name, StringComparer.Ordinal))
+                {
+                    ArgumentException.ThrowIfNullOrWhiteSpace(representation.Name);
+                    writer.WritePropertyName(representation.Name);
+                    if (representation.Kind == ParsedRepresentationKind.Markdown)
+                    {
+                        writer.WriteStringValue(representation.Content);
+                    }
+                    else
+                    {
+                        using var json = JsonDocument.Parse(representation.Content);
+                        WriteCanonicalJson(writer, json.RootElement);
+                    }
+                }
+
+                writer.WriteEndObject();
+            }
+
+            if (result.Parser.OutputSchemaVersion >= 2)
+            {
+                writer.WriteString("completeness", result.Completeness.ToString());
+                writer.WriteNumber("warningCount", result.WarningCount);
+                if (result.SafeDiagnosticCode is not null)
+                {
+                    writer.WriteString("safeDiagnosticCode", result.SafeDiagnosticCode);
+                }
+            }
+
             writer.WritePropertyName("blocks");
             writer.WriteStartArray();
             foreach (var block in result.Blocks.OrderBy(block => block.Ordinal))
@@ -110,10 +142,154 @@ public static class ParsedArtifactSerializer
 
                 writer.WriteEndArray();
                 break;
+            case PagedRegionSourceLocator paged:
+                writer.WriteNumber("pageNumber", paged.PageNumber);
+                writer.WriteString("itemReference", paged.ItemReference);
+                writer.WriteNumber("documentOrdinal", paged.DocumentOrdinal);
+                WriteBoundingBox(writer, paged.BoundingBox);
+                if (paged.CharacterSpan is { } characterSpan)
+                {
+                    writer.WritePropertyName("characterSpan");
+                    writer.WriteStartObject();
+                    writer.WriteNumber("start", characterSpan.Start);
+                    writer.WriteNumber("end", characterSpan.End);
+                    writer.WriteEndObject();
+                }
+
+                WriteOptionalNumber(writer, "pageWidth", paged.PageWidth);
+                WriteOptionalNumber(writer, "pageHeight", paged.PageHeight);
+                break;
+            case StructuredDocumentSourceLocator structured:
+                writer.WriteString("itemReference", structured.ItemReference);
+                writer.WriteNumber("documentOrdinal", structured.DocumentOrdinal);
+                WriteHeadingPath(writer, structured.HeadingPath);
+                if (structured.PageNumber is { } structuredPage)
+                {
+                    writer.WriteNumber("pageNumber", structuredPage);
+                }
+
+                WriteBoundingBox(writer, structured.BoundingBox);
+                break;
+            case PresentationSourceLocator presentation:
+                writer.WriteNumber("slideNumber", presentation.SlideNumber);
+                writer.WriteString("itemReference", presentation.ItemReference);
+                writer.WriteNumber("slideOrdinal", presentation.SlideOrdinal);
+                if (presentation.SlideTitle is not null)
+                {
+                    writer.WriteString("slideTitle", presentation.SlideTitle);
+                }
+
+                WriteBoundingBox(writer, presentation.BoundingBox);
+                break;
+            case ImageRegionSourceLocator image:
+                writer.WriteString("itemReference", image.ItemReference);
+                writer.WriteNumber("regionOrdinal", image.RegionOrdinal);
+                WriteBoundingBox(writer, image.BoundingBox);
+                if (image.ImageWidth is { } imageWidth)
+                {
+                    writer.WriteNumber("imageWidth", imageWidth);
+                }
+
+                if (image.ImageHeight is { } imageHeight)
+                {
+                    writer.WriteNumber("imageHeight", imageHeight);
+                }
+
+                break;
+            case SpreadsheetSourceLocator spreadsheet:
+                writer.WriteString("sheetName", spreadsheet.SheetName);
+                writer.WriteNumber("sheetIndex", spreadsheet.SheetIndex);
+                writer.WriteString("range", spreadsheet.Range);
+                if (spreadsheet.TableName is not null)
+                {
+                    writer.WriteString("tableName", spreadsheet.TableName);
+                }
+
+                break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(locator), "Unknown source locator type.");
         }
 
         writer.WriteEndObject();
+    }
+
+    private static void WriteHeadingPath(Utf8JsonWriter writer, IReadOnlyList<string> headingPath)
+    {
+        writer.WritePropertyName("headingPath");
+        writer.WriteStartArray();
+        foreach (var heading in headingPath)
+        {
+            writer.WriteStringValue(heading);
+        }
+
+        writer.WriteEndArray();
+    }
+
+    private static void WriteBoundingBox(Utf8JsonWriter writer, SourceBoundingBox? boundingBox)
+    {
+        if (boundingBox is null)
+        {
+            return;
+        }
+
+        writer.WritePropertyName("boundingBox");
+        writer.WriteStartObject();
+        writer.WriteNumber("left", boundingBox.Left);
+        writer.WriteNumber("top", boundingBox.Top);
+        writer.WriteNumber("right", boundingBox.Right);
+        writer.WriteNumber("bottom", boundingBox.Bottom);
+        writer.WriteString("origin", boundingBox.Origin.ToString());
+        writer.WriteEndObject();
+    }
+
+    private static void WriteOptionalNumber(Utf8JsonWriter writer, string name, double? value)
+    {
+        if (value is { } number)
+        {
+            writer.WriteNumber(name, number);
+        }
+    }
+
+    internal static void WriteCanonicalJson(Utf8JsonWriter writer, JsonElement element)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                writer.WriteStartObject();
+                foreach (var property in element.EnumerateObject().OrderBy(item => item.Name, StringComparer.Ordinal))
+                {
+                    writer.WritePropertyName(property.Name);
+                    WriteCanonicalJson(writer, property.Value);
+                }
+
+                writer.WriteEndObject();
+                break;
+            case JsonValueKind.Array:
+                writer.WriteStartArray();
+                foreach (var item in element.EnumerateArray())
+                {
+                    WriteCanonicalJson(writer, item);
+                }
+
+                writer.WriteEndArray();
+                break;
+            case JsonValueKind.String:
+                writer.WriteStringValue(element.GetString());
+                break;
+            case JsonValueKind.Number:
+                element.WriteTo(writer);
+                break;
+            case JsonValueKind.True:
+                writer.WriteBooleanValue(true);
+                break;
+            case JsonValueKind.False:
+                writer.WriteBooleanValue(false);
+                break;
+            case JsonValueKind.Null:
+                writer.WriteNullValue();
+                break;
+            default:
+                throw new InvalidDataException("Unsupported JSON token in parsed representation.");
+        }
     }
 }

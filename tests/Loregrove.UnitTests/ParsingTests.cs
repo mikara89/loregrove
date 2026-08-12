@@ -280,6 +280,10 @@ public sealed class ParsingTests
             second.Blocks.Select(block => (block.Ordinal, block.Kind, block.Text)));
         Assert.Equal(firstArtifact.ContentHash, secondArtifact.ContentHash);
         Assert.Equal(firstArtifact.Bytes, secondArtifact.Bytes);
+        var schemaOneJson = Encoding.UTF8.GetString(firstArtifact.Bytes);
+        Assert.DoesNotContain("\"representations\"", schemaOneJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"completeness\"", schemaOneJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("\"warningCount\"", schemaOneJson, StringComparison.Ordinal);
         var firstLocator = Assert.IsType<MarkdownSourceLocator>(first.Blocks[1].Locator);
         var secondLocator = Assert.IsType<MarkdownSourceLocator>(second.Blocks[1].Locator);
         Assert.Equal(

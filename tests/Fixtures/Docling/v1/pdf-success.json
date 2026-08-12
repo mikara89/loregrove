@@ -1,0 +1,48 @@
+{
+  "schema_name": "DoclingDocument",
+  "version": "1.0.0",
+  "task_id": "volatile-task-id",
+  "timings": { "convert": 1.25 },
+  "source_path": "C:\\Users\\private\\evidence.pdf",
+  "body": { "self_ref": "#/body", "children": [{ "$ref": "#/texts/0" }] },
+  "furniture": { "self_ref": "#/furniture", "children": [] },
+  "groups": [],
+  "pictures": [],
+  "key_value_items": [],
+  "pages": { "1": { "page_no": 1, "size": { "width": 612.0, "height": 792.0 } } },
+  "texts": [
+    {
+      "self_ref": "#/texts/0",
+      "label": "section_header",
+      "text": "Architecture",
+      "children": [{ "$ref": "#/texts/1" }, { "$ref": "#/tables/0" }],
+      "prov": [{ "page_no": 1, "bbox": { "l": 72.0, "t": 740.0, "r": 300.0, "b": 710.0, "coord_origin": "BOTTOMLEFT" }, "charspan": [0, 12] }]
+    },
+    {
+      "self_ref": "#/texts/1",
+      "label": "paragraph",
+      "text": "Immutable evidence.",
+      "children": [],
+      "prov": [
+        { "page_no": 1, "bbox": { "l": 72.0, "t": 690.0, "r": 340.0, "b": 660.0, "coord_origin": "BOTTOMLEFT" }, "charspan": [13, 32] },
+        { "page_no": 1, "bbox": { "l": 72.0, "t": 650.0, "r": 220.0, "b": 630.0, "coord_origin": "BOTTOMLEFT" }, "charspan": [33, 40] }
+      ]
+    }
+  ],
+  "tables": [
+    {
+      "self_ref": "#/tables/0",
+      "label": "table",
+      "children": [],
+      "prov": [{ "page_no": 1, "bbox": { "l": 72.0, "t": 620.0, "r": 420.0, "b": 500.0, "coord_origin": "BOTTOMLEFT" }, "charspan": [41, 60] }],
+      "data": {
+        "table_cells": [
+          { "start_row_offset_idx": 0, "start_col_offset_idx": 0, "text": "Layer" },
+          { "start_row_offset_idx": 0, "start_col_offset_idx": 1, "text": "Trust" },
+          { "start_row_offset_idx": 1, "start_col_offset_idx": 0, "text": "Original" },
+          { "start_row_offset_idx": 1, "start_col_offset_idx": 1, "text": "Tier 1" }
+        ]
+      }
+    }
+  ]
+}

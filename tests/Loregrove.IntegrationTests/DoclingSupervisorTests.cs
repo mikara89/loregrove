@@ -63,7 +63,7 @@ public sealed class DoclingSupervisorTests
         var cancelled = manager.EnsureReadyAsync(cancelledWait.Token);
         var survivingC = manager.EnsureReadyAsync(CancellationToken.None);
 
-        await WaitUntilAsync(() => context.Harness.LaunchCount == 1);
+        await WaitUntilAsync(() => context.Harness.ProcessCount == 1);
         cancelledWait.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cancelled);
         Assert.False(survivingA.IsCompleted);
@@ -83,7 +83,7 @@ public sealed class DoclingSupervisorTests
         await using var manager = context.Manager;
 
         var startup = manager.EnsureReadyAsync(CancellationToken.None);
-        await WaitUntilAsync(() => context.Harness.LaunchCount == 1);
+        await WaitUntilAsync(() => context.Harness.ProcessCount == 1);
 
         Assert.Equal(DoclingProcessState.Starting, manager.GetSnapshot().State);
         Assert.False(startup.IsCompleted);
@@ -675,6 +675,17 @@ public sealed class DoclingSupervisorTests
         }
 
         internal int LaunchCount => Volatile.Read(ref _launchCount);
+
+        internal int ProcessCount
+        {
+            get
+            {
+                lock (Processes)
+                {
+                    return Processes.Count;
+                }
+            }
+        }
 
         internal int ShutdownRequests => Volatile.Read(ref _shutdownRequests);
 

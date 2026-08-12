@@ -28,6 +28,9 @@ public sealed class ParsedArtifactConfiguration : IEntityTypeConfiguration<Parse
         builder.Property(artifact => artifact.CreatedAt).IsRequired();
         builder.Property(artifact => artifact.BlockCount).IsRequired();
         builder.Property(artifact => artifact.IsCurrent).IsRequired();
+        builder.Property(artifact => artifact.Completeness).HasConversion<int>().IsRequired();
+        builder.Property(artifact => artifact.WarningCount).IsRequired();
+        builder.Property(artifact => artifact.SafeDiagnosticCode).HasMaxLength(128);
 
         builder.HasIndex(artifact => artifact.DocumentVersionId);
         builder.HasIndex(artifact => new { artifact.DocumentVersionId, artifact.ParserFingerprint }).IsUnique();

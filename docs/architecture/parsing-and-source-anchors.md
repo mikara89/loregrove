@@ -1,6 +1,6 @@
 # Parsing and source anchors
 
-Loregrove parses immutable TXT and Markdown source objects into durable Tier-2 observations. Parsing
+Loregrove parses immutable TXT, Markdown, PDF, DOCX, PPTX, XLSX, and common image source objects into durable Tier-2 observations. Parsing
 changes the representation of evidence; it does not increase its authority. The captured source
 object remains the authoritative Tier-1 evidence and parsed output never creates facts, entities,
 claims, relationships, categories, summaries, or canonical knowledge.
@@ -56,12 +56,13 @@ Each `ParserDescriptor` records parser ID, parser version, output schema version
 configuration fingerprint, and SHA-256 parser fingerprint over all preceding output-affecting
 inputs.
 
-The resolver prefers a specific supported media type (`text/plain` or `text/markdown`) even when the
+The resolver prefers a specific supported media type even when the
 extension conflicts. Missing or generic `application/octet-stream` metadata falls back to `.txt`,
-`.md`, or `.markdown`. A specific unsupported media type does not fall back by extension. Resolution
+`.md`, `.markdown`, or a supported complex-format extension. A specific unsupported media type does
+not fall back by extension. Resolution
 is deterministic and never inspects a path, source bytes, remote service, or AI model.
 
-Prompt 05 provides two in-process parsers:
+Loregrove provides two in-process parsers:
 
 - TXT: BOM-aware Unicode/strict UTF-8 line reading, LF-normalized paragraph text, blank-line
   paragraph boundaries, and 1-based original line ranges;
@@ -74,20 +75,32 @@ control-character input fail safely. Markdown links and images retain useful lin
 fetching URLs. Raw HTML is preserved as plain source text and is never executed or used to load
 remote content.
 
+Complex formats use the Docling parser described in
+[Docling conversion and complex-format anchors](docling-conversion.md). Its availability is checked
+before a durable claim. A missing pack or remote endpoint/consent/credential therefore leaves the
+job retryable without incrementing its attempt count.
+
 ## Normalized blocks and locators
 
-`ParsedDocumentResult` contains only a parser descriptor, ordered blocks, and deterministic metadata.
+`ParsedDocumentResult` contains a parser descriptor, ordered blocks, deterministic metadata,
+optional canonical representations, completeness, warning count, and a bounded diagnostic code.
 It contains no timestamps, EF entities, or storage paths. Block ordinals are contiguous and each
 non-empty block has a kind, normalized Unicode text, typed locator, and heading path.
 
-Prompt 05 locator types are:
+Locator types are:
 
 - `TextSourceLocator`: 1-based start/end lines and optional character offsets;
 - `MarkdownSourceLocator`: 1-based original AST source lines, block ordinal, and hierarchical heading
   path.
+- `PagedRegionSourceLocator`: PDF page, item reference, ordinal, and optional bounding box,
+  character span, and page dimensions;
+- `StructuredDocumentSourceLocator`: DOCX/structured item reference, ordinal, hierarchy, and optional
+  page/region provenance;
+- `PresentationSourceLocator`: slide number/title context, item reference, ordinal, and optional region;
+- `ImageRegionSourceLocator`: OCR item reference, ordinal, optional region, and optional dimensions;
+- `SpreadsheetSourceLocator`: sheet name/index/visibility, cell or range, optional table name, and ordinal.
 
-Future PDF page/bounding-box, DOCX paragraph, spreadsheet cell/range, and image-region locators can
-extend `SourceLocator`. Persistence records `LocatorKind`, `LocatorSchemaVersion`, and deterministic
+Persistence records `LocatorKind`, `LocatorSchemaVersion`, and deterministic
 `LocatorJson`. The SQLite-owned `ISourceLocatorCodec` implementation rejects unknown kinds, schemas,
 properties, and malformed payloads; public evidence reads return typed locators rather than JSON.
 
@@ -95,7 +108,7 @@ properties, and malformed payloads; public evidence reads return typed locators 
 
 `ParsedArtifact` records its typed ID, source version, source hash, parser ID/version/configuration
 fingerprint/parser fingerprint, schema version, artifact hash/object key, relational creation time,
-block count, and current flag. `SourceAnchor` records its typed ID, artifact and source version IDs,
+block count, completeness, warning count, safe diagnostic code, and current flag. `SourceAnchor` records its typed ID, artifact and source version IDs,
 ordinal, block kind, locator kind/schema/JSON, normalized text, and SHA-256 normalized-text hash.
 SQLite enforces `(ParsedArtifactId, DocumentVersionId) -> ParsedArtifact(Id, DocumentVersionId)` as
 a composite foreign key, so an anchor cannot claim a source version different from its artifact.
@@ -152,9 +165,10 @@ cancellation near commit, or relational failure is a safe immutable orphan. Roll
 finalized artifact because a concurrent operation may already reference the same content; future
 maintenance can garbage-collect unreachable hashes.
 
-An explicit parser-input failure commits ParseFailed/Failed/Parsing with a bounded generic message and
+An explicit parser-input or document-conversion failure commits ParseFailed/Failed/Parsing with a bounded generic message and
 no partial evidence; parser exception detail and source text never enter `LastError`. Unexpected
-storage or infrastructure faults propagate while the job returns to retryable Pending/Parsing.
+storage faults propagate while the job returns to retryable Pending/Parsing. Typed conversion
+infrastructure faults return as retryable results with the same state and no raw upstream detail.
 Explicit retry increments the attempt again. Cancellation after a claim keeps its consumed attempt
 but returns the source and job to PendingProcessing/Pending/Parsing with no error. Startup recovery
 atomically resets an interrupted Processing/Parsing job and its visually Parsing source to those same
@@ -166,10 +180,10 @@ retryable states without incrementing attempts.
 anchors. Artifact bytes can be opened and SHA-256 verified for diagnostics or reprocessing without
 paying that cost on every routine query.
 
-PDF, DOCX, PPTX, images, spreadsheets, OCR, and other complex formats return Unsupported in Prompt
-05. Their pending Parsing jobs remain retryable. Prompt 06 can add a managed Docling supervisor and
-Prompt 07 can add complex-format parser adapters behind the same contract. Neither needs to alter the
-trust model, artifact identity, locator envelope, or transaction semantics established here.
+PDF, DOCX, PPTX, XLSX, PNG, JPEG, TIFF, BMP, and WEBP now use the Docling adapter behind this same
+contract. Unsupported formats and unavailable conversion modes remain pending and retryable. The
+extension does not alter the trust model, immutable source identity, locator envelope, or
+transaction semantics established for TXT and Markdown.
 
 No worker process, chunk, FTS table, embedding, vector index, AI provider, generated knowledge, or
 source preview is introduced by this architecture.
