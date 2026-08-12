@@ -55,15 +55,21 @@ public sealed class DoclingSupervisorTests
     [Fact]
     public async Task CallerCancellationDoesNotCancelSharedStartup()
     {
-        var context = CreateManager(new FakeProcessBehavior(ReadyDelay: TimeSpan.FromMilliseconds(120)));
+        var context = CreateManager(new FakeProcessBehavior(NeverReady: true));
         await using var manager = context.Manager;
-        using var cancelledWait = new CancellationTokenSource(TimeSpan.FromMilliseconds(30));
+        using var cancelledWait = new CancellationTokenSource();
 
         var survivingA = manager.EnsureReadyAsync(CancellationToken.None);
         var cancelled = manager.EnsureReadyAsync(cancelledWait.Token);
         var survivingC = manager.EnsureReadyAsync(CancellationToken.None);
 
+        await WaitUntilAsync(() => context.Harness.LaunchCount == 1);
+        cancelledWait.Cancel();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cancelled);
+        Assert.False(survivingA.IsCompleted);
+        Assert.False(survivingC.IsCompleted);
+
+        context.Harness.Processes[0].SignalReady();
         var endpoints = await Task.WhenAll(survivingA, survivingC);
 
         Assert.Equal(1, context.Harness.LaunchCount);
@@ -73,7 +79,7 @@ public sealed class DoclingSupervisorTests
     [Fact]
     public async Task ProcessRemainsStartingUntilReadinessIsConfirmed()
     {
-        var context = CreateManager(new FakeProcessBehavior(ReadyDelay: TimeSpan.FromMilliseconds(150)));
+        var context = CreateManager(new FakeProcessBehavior(NeverReady: true));
         await using var manager = context.Manager;
 
         var startup = manager.EnsureReadyAsync(CancellationToken.None);
@@ -81,6 +87,7 @@ public sealed class DoclingSupervisorTests
 
         Assert.Equal(DoclingProcessState.Starting, manager.GetSnapshot().State);
         Assert.False(startup.IsCompleted);
+        context.Harness.Processes[0].SignalReady();
         await startup;
     }
 
@@ -450,7 +457,7 @@ public sealed class DoclingSupervisorTests
         var validator = new StubPackValidator();
         var options = new DoclingSupervisorOptions
         {
-            StartupTimeout = startupTimeout ?? TimeSpan.FromSeconds(1),
+            StartupTimeout = startupTimeout ?? TimeSpan.FromSeconds(5),
             ReadinessProbeTimeout = TimeSpan.FromMilliseconds(30),
             ReadinessPollInterval = TimeSpan.FromMilliseconds(5),
             IdleTimeout = idleTimeout ?? TimeSpan.FromSeconds(1),
@@ -654,6 +661,7 @@ public sealed class DoclingSupervisorTests
         private readonly TaskCompletionSource<int> _exit = new(
             TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly Action _onKill;
+        private int _readySignaled;
 
         internal FakeChildProcess(int id, FakeProcessBehavior behavior, Action onKill)
         {
@@ -671,9 +679,10 @@ public sealed class DoclingSupervisorTests
         internal FakeProcessBehavior Behavior { get; }
 
         internal bool IsReady =>
-            !Behavior.NeverReady &&
             !HasExited &&
-            DateTimeOffset.UtcNow - _startedAt >= (Behavior.ReadyDelay ?? TimeSpan.Zero);
+            (Volatile.Read(ref _readySignaled) != 0 ||
+                (!Behavior.NeverReady &&
+                    DateTimeOffset.UtcNow - _startedAt >= (Behavior.ReadyDelay ?? TimeSpan.Zero)));
 
         public ChildProcessDiagnostics GetDiagnostics() => new("fake stdout", "fake stderr");
 
@@ -689,5 +698,7 @@ public sealed class DoclingSupervisorTests
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
 
         internal void Exit(int exitCode) => _exit.TrySetResult(exitCode);
+
+        internal void SignalReady() => Volatile.Write(ref _readySignaled, 1);
     }
 }
