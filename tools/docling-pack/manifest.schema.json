@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://loregrove.local/schemas/docling-processing-pack-manifest-v1.json",
+  "title": "Loregrove Docling Processing Pack manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "commandContractVersion",
+    "packVersion",
+    "pythonVersion",
+    "doclingVersion",
+    "doclingServeVersion",
+    "runtimeIdentifier",
+    "entryPoint",
+    "requiredFiles"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "commandContractVersion": { "const": 1 },
+    "packVersion": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "pythonVersion": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "doclingVersion": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "doclingServeVersion": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "runtimeIdentifier": {
+      "enum": ["win-x64", "osx-x64", "osx-arm64"]
+    },
+    "entryPoint": { "$ref": "#/$defs/relativePath" },
+    "requiredFiles": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/relativePath" }
+    }
+  },
+  "$defs": {
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?![A-Za-z]:)(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
+    }
+  }
+}

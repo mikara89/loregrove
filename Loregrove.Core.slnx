@@ -11,6 +11,7 @@
     <Project Path="src/Loregrove.UI/Loregrove.UI.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/Loregrove.DoclingTestHost/Loregrove.DoclingTestHost.csproj" />
     <Project Path="tests/Loregrove.ContractTests/Loregrove.ContractTests.csproj" />
     <Project Path="tests/Loregrove.EndToEndTests/Loregrove.EndToEndTests.csproj" />
     <Project Path="tests/Loregrove.IntegrationTests/Loregrove.IntegrationTests.csproj" />

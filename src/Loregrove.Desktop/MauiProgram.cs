@@ -5,6 +5,7 @@ using Loregrove.Application.Parsing;
 using Loregrove.Application.Security;
 using Loregrove.Application.Storage;
 using Loregrove.Infrastructure.Desktop;
+using Loregrove.Infrastructure.Docling;
 using Loregrove.Infrastructure.LocalFiles;
 using Loregrove.Infrastructure.Sqlite;
 using Microsoft.Extensions.Logging;
@@ -43,6 +44,9 @@ public static class MauiProgram
         builder.Services.AddSingleton<IDesktopDropAdapter, UnavailableDesktopDropAdapter>();
         builder.Services.AddSingleton<ISecretStore, UnavailableSecretStore>();
         builder.Services.AddLoregroveParsing();
+        builder.Services.AddLoregroveDocling(configuration =>
+            configuration.DeveloperPackOverridePath =
+                Environment.GetEnvironmentVariable("LOREGROVE_DOCLING_PACK"));
 
         var libraryPaths = new LocalLibraryPaths(Path.Combine(FileSystem.AppDataDirectory, "Library"));
         builder.Services.AddSingleton<ILibraryPaths>(libraryPaths);

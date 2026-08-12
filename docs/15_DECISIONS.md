@@ -22,7 +22,7 @@
 | Parser identity | Deterministic parser fingerprint over identity, version, schema, and configuration |
 | Parsed artifact files | Content-addressed JSON under `artifacts/parsed/<prefix>/<sha256>.json` |
 | AI runtimes | User-managed; Loregrove only calls configured providers |
-| Docling | Optional on-demand managed child process or remote |
+| Docling | Separate versioned Processing Pack; one loopback-only managed child and exclusive conversion lease |
 | Knowledge truth model | Evidence separate from generated interpretation |
 | Clarification | Review Inbox + durable user resolutions |
 | Docs diagrams | Mermaid |

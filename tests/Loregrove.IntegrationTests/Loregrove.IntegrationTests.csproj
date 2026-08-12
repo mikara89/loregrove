@@ -19,6 +19,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\Loregrove.DoclingTestHost\Loregrove.DoclingTestHost.csproj"
+                      ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\..\src\Loregrove.Application\Loregrove.Application.csproj" />
     <ProjectReference Include="..\..\src\Loregrove.Infrastructure.AI\Loregrove.Infrastructure.AI.csproj" />
     <ProjectReference Include="..\..\src\Loregrove.Infrastructure.Desktop\Loregrove.Infrastructure.Desktop.csproj" />

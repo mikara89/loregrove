@@ -81,6 +81,34 @@ public sealed class DependencyRulesTests
     }
 
     [Fact]
+    public void ProcessManagementRemainsInsideDoclingInfrastructure()
+    {
+        foreach (var projectName in new[] { "Loregrove.Domain", "Loregrove.Application", "Loregrove.UI" })
+        {
+            AssertSourceDoesNotContain(projectName, "System.Diagnostics.Process");
+            AssertSourceDoesNotContain(projectName, "ProcessStartInfo");
+        }
+
+        AssertSourceDoesNotContain("Loregrove.UI", "IDoclingProcessManager");
+    }
+
+    [Fact]
+    public void DoclingInfrastructureHasNoUiOrSqliteDependency()
+    {
+        foreach (var token in new[]
+        {
+            "Microsoft.Maui",
+            "Microsoft.FluentUI",
+            "Microsoft.EntityFrameworkCore",
+            "Microsoft.Data.Sqlite",
+            "Loregrove.UI",
+        })
+        {
+            AssertSourceDoesNotContain("Loregrove.Infrastructure.Docling", token);
+        }
+    }
+
+    [Fact]
     public void SharedUiDoesNotResolvePersistenceOrOpenFiles()
     {
         foreach (var token in new[]
