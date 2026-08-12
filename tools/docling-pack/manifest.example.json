@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "commandContractVersion": 1,
+  "packVersion": "0.1.0",
+  "pythonVersion": "3.12.0",
+  "doclingVersion": "PINNED_BY_RELEASE",
+  "doclingServeVersion": "PINNED_BY_RELEASE",
+  "runtimeIdentifier": "win-x64",
+  "entryPoint": "bin/loregrove-docling-pack.exe",
+  "requiredFiles": [
+    "runtime/python312.dll"
+  ]
+}

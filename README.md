@@ -6,7 +6,8 @@ This repository contains the production architecture, desktop shell, and local e
 foundation. The shared Fluent Library supports native multi-file selection, bounded durable imports,
 duplicate reporting, paged/filterable SQLite results, and source metadata details. Captured TXT and
 Markdown sources can now be parsed into immutable deterministic artifacts and structured Tier-2
-source anchors. Search, AI, Docling, and knowledge extraction are not implemented yet.
+source anchors. The optional Docling Processing Pack now has a managed local lifecycle boundary, but
+document conversion is intentionally deferred. Search, AI, and knowledge extraction are not implemented yet.
 
 ## Current targets
 
@@ -58,6 +59,7 @@ tests/
   Loregrove.IntegrationTests/
   Loregrove.UITests/
   Loregrove.EndToEndTests/
+  Loregrove.DoclingTestHost/
 ```
 
 `Loregrove.slnx` is the complete Windows/macOS production solution. `Loregrove.Core.slnx` excludes
@@ -80,5 +82,6 @@ See [production boundaries](docs/architecture/production-boundaries.md),
 [SQLite persistence](docs/architecture/sqlite-persistence.md),
 [Library UI and source import](docs/architecture/library-ui-and-import.md),
 [parsing and source anchors](docs/architecture/parsing-and-source-anchors.md),
+[managed Docling supervisor](docs/architecture/docling-supervisor.md),
 [Windows validation debt](docs/platform/windows-validation.md), and
 [macOS validation debt](docs/platform/macos-validation.md) for the current implementation status.
