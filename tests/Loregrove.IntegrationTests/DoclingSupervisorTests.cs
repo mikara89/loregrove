@@ -116,6 +116,60 @@ public sealed class DoclingSupervisorTests
     }
 
     [Fact]
+    public async Task FailedStartupCleanupRetainsUnkillableProcessAndBlocksRetryThenRecovers()
+    {
+        var context = CreateManager(
+            new FakeProcessBehavior(
+                NeverReady: true,
+                IgnoreGracefulShutdown: true,
+                IgnoreKill: true),
+            new FakeProcessBehavior(),
+            startupTimeout: TimeSpan.FromMilliseconds(50),
+            gracefulTimeout: TimeSpan.FromMilliseconds(20),
+            forcedKillTimeout: TimeSpan.FromMilliseconds(20));
+        var manager = context.Manager;
+
+        var startupFailure = await Assert.ThrowsAsync<DoclingProcessException>(
+            () => manager.EnsureReadyAsync(CancellationToken.None));
+
+        Assert.Equal(DoclingFailureCode.ShutdownFailed, startupFailure.Code);
+        Assert.Equal(DoclingProcessState.Faulted, manager.GetSnapshot().State);
+        Assert.Equal(1, context.Harness.LaunchCount);
+        Assert.False(context.Harness.Processes[0].HasExited);
+
+        context.Harness.Processes[0].Exit(-1);
+        var recovered = await manager.EnsureReadyAsync(CancellationToken.None);
+
+        Assert.Equal(2, context.Harness.LaunchCount);
+        Assert.Equal(recovered.GenerationId, manager.GetSnapshot().GenerationId);
+        Assert.Single(context.Harness.Processes, process => !process.HasExited);
+
+        await manager.StopAsync(CancellationToken.None);
+        await manager.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task FailedStartupCleanupKillsFirstProcessBeforeRetrying()
+    {
+        var context = CreateManager(
+            new FakeProcessBehavior(
+                NeverReady: true,
+                IgnoreGracefulShutdown: true),
+            new FakeProcessBehavior(),
+            startupTimeout: TimeSpan.FromMilliseconds(50),
+            gracefulTimeout: TimeSpan.FromMilliseconds(20));
+        await using var manager = context.Manager;
+
+        var endpoint = await manager.EnsureReadyAsync(CancellationToken.None);
+
+        Assert.Equal(2, context.Harness.LaunchCount);
+        Assert.Equal(1, context.Harness.KillTreeCalls);
+        Assert.True(context.Harness.Processes[0].HasExited);
+        Assert.Equal(endpoint.GenerationId, manager.GetSnapshot().GenerationId);
+        Assert.Single(context.Harness.Processes, process => !process.HasExited);
+    }
+
+    [Fact]
     public async Task FirstStartupFailureRecoversExactlyOnce()
     {
         var context = CreateManager(

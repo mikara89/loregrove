@@ -660,9 +660,9 @@ internal sealed class DoclingProcessManager : IDoclingProcessManager, IDisposabl
         try
         {
             ownedProcess.ExpectedExit = true;
-            if (ReferenceEquals(_ownedProcess, ownedProcess))
+            if (_ownedProcess is null)
             {
-                _ownedProcess = null;
+                _ownedProcess = ownedProcess;
             }
 
             _lastFailureDiagnostics = ownedProcess.Process.GetDiagnostics();
@@ -672,7 +672,37 @@ internal sealed class DoclingProcessManager : IDoclingProcessManager, IDisposabl
             _lifecycleGate.Release();
         }
 
-        await TerminateProcessAsync(ownedProcess);
+        var terminated = await TerminateProcessAsync(ownedProcess);
+
+        await _lifecycleGate.WaitAsync(CancellationToken.None);
+        try
+        {
+            if (ReferenceEquals(_ownedProcess, ownedProcess))
+            {
+                if (terminated)
+                {
+                    _ownedProcess = null;
+                }
+                else
+                {
+                    TransitionLocked(
+                        DoclingProcessState.Faulted,
+                        ownedProcess,
+                        DoclingFailureCode.ShutdownFailed);
+                }
+            }
+        }
+        finally
+        {
+            _lifecycleGate.Release();
+        }
+
+        if (!terminated)
+        {
+            throw Failure(
+                DoclingFailureCode.ShutdownFailed,
+                "The failed Docling process could not be stopped cleanly.");
+        }
     }
 
     private async Task<bool> TerminateProcessAsync(OwnedProcess ownedProcess)
