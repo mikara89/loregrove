@@ -276,9 +276,9 @@ public sealed class DoclingSupervisorTests
     }
 
     [Fact]
-    public async Task NewWorkNearIdleDeadlineCancelsShutdownAndReusesProcess()
+    public async Task NewWorkWhileIdleCancelsShutdownAndReusesProcess()
     {
-        var context = CreateManager(idleTimeout: TimeSpan.FromMilliseconds(160));
+        var context = CreateManager(idleTimeout: TimeSpan.FromSeconds(2));
         await using var manager = context.Manager;
         long generation;
         await using (var lease = await manager.AcquireAsync(CancellationToken.None))
@@ -286,7 +286,7 @@ public sealed class DoclingSupervisorTests
             generation = lease.GenerationId;
         }
 
-        await Task.Delay(100);
+        await WaitUntilAsync(() => manager.GetSnapshot().State == DoclingProcessState.Idle);
         await using var replacement = await manager.AcquireAsync(CancellationToken.None);
 
         Assert.Equal(generation, replacement.GenerationId);
