@@ -1,4 +1,5 @@
 using Loregrove.Application.Client;
+using Loregrove.Application.Library;
 using Loregrove.Application.Platform;
 using Loregrove.Application.Security;
 using Loregrove.Application.Storage;
@@ -31,12 +32,13 @@ public static class MauiProgram
         builder.Services.AddMauiBlazorWebView();
         builder.Services.AddFluentUIComponents();
         builder.Services.AddSingleton<ILibraryClient, LibraryClient>();
+        builder.Services.AddSingleton<LibraryImportCoordinator>();
         builder.Services.AddSingleton<ISearchClient, SearchClient>();
         builder.Services.AddSingleton<IKnowledgeClient, KnowledgeClient>();
         builder.Services.AddSingleton<IReviewClient, ReviewClient>();
         builder.Services.AddSingleton<IAskClient, AskClient>();
         builder.Services.AddSingleton<ILoregroveClient, LoregroveClient>();
-        builder.Services.AddSingleton<IDesktopPlatform, UnavailableDesktopPlatform>();
+        builder.Services.AddSingleton<IDesktopPlatform, MauiDesktopPlatform>();
         builder.Services.AddSingleton<IDesktopDropAdapter, UnavailableDesktopDropAdapter>();
         builder.Services.AddSingleton<ISecretStore, UnavailableSecretStore>();
 

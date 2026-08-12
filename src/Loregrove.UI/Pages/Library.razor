@@ -1,3 +1,289 @@
 @page "/library"
+@implements IAsyncDisposable
+@inject ILoregroveClient Client
+@inject NavigationManager Navigation
 
-<PlaceholderPage Title="Library" Description="Imported source material will appear here." />
+<FluentCard class="page-card library-card">
+    <div class="library-heading">
+        <div>
+            <p class="eyebrow">Durable local sources</p>
+            <h1>Library</h1>
+            <p>Browse original sources captured in this Loregrove library.</p>
+        </div>
+        <FluentButton Appearance="ButtonAppearance.Primary"
+                      Disabled="@_importing"
+                      aria-label="Import files into the Loregrove library"
+                      @onclick="ImportFilesAsync">
+            Import files
+        </FluentButton>
+    </div>
+
+    <div class="library-toolbar">
+        <strong>@SourceCountLabel</strong>
+        <FluentTextInput Label="Search library"
+                         Placeholder="Name or original filename"
+                         Immediate="true"
+                         ImmediateDelay="325"
+                         @bind-Value="_searchText"
+                         @bind-Value:after="SearchChangedAsync" />
+    </div>
+
+    @if (_importing)
+    {
+        <section class="import-status" aria-labelledby="import-progress-title" aria-live="polite">
+            <div class="section-heading">
+                <strong id="import-progress-title">Importing sources</strong>
+                <FluentButton Appearance="ButtonAppearance.Outline" @onclick="CancelImport">Cancel import</FluentButton>
+            </div>
+            <FluentProgressBar Min="0" Max="@Math.Max(1, _progressTotal)" Value="@CompletedProgressCount" />
+            @if (_progressItems.Count > 0)
+            {
+                <ul class="import-results">
+                    @foreach (var item in _progressItems.Values.OrderBy(item => item.Index))
+                    {
+                        <li>
+                            <span>@item.FileName</span>
+                            <strong>@LibraryPresentation.ImportState(item.State)</strong>
+                            @if (item.Message is not null)
+                            {
+                                <small>@item.Message</small>
+                            }
+                        </li>
+                    }
+                </ul>
+            }
+        </section>
+    }
+    else if (_lastImportResult is not null)
+    {
+        <section class="import-status" aria-live="polite">
+            <strong>@LibraryPresentation.ImportSummary(_lastImportResult)</strong>
+            @if (_lastImportResult.Items.Any(item => item.State is ImportItemState.AlreadyExists or ImportItemState.Failed or ImportItemState.Cancelled))
+            {
+                <ul class="import-results">
+                    @foreach (var item in _lastImportResult.Items.Where(item => item.State != ImportItemState.Imported))
+                    {
+                        <li>
+                            <span>@item.FileName</span>
+                            <strong>@LibraryPresentation.ImportState(item.State)</strong>
+                            @if (item.Message is not null)
+                            {
+                                <small>@item.Message</small>
+                            }
+                        </li>
+                    }
+                </ul>
+            }
+        </section>
+    }
+
+    @if (_error is not null)
+    {
+        <div class="message-state error-state" role="alert">
+            <strong>The library could not be loaded.</strong>
+            <span>@_error</span>
+            <FluentButton @onclick="ReloadAsync">Try again</FluentButton>
+        </div>
+    }
+    else if (_loading)
+    {
+        <div class="message-state" role="status" aria-live="polite">
+            <FluentSpinner aria-label="Loading the source library" />
+            <span>Loading library…</span>
+        </div>
+    }
+    else if (_page is { TotalCount: 0 })
+    {
+        <div class="empty-library">
+            <h2>Your library is empty</h2>
+            <p>
+                Import PDFs, documents, spreadsheets, images, Markdown files, or text files to
+                capture durable originals in Loregrove.
+            </p>
+            <FluentButton Appearance="ButtonAppearance.Primary"
+                          aria-label="Import the first files into the Loregrove library"
+                          @onclick="ImportFilesAsync">
+                Import files
+            </FluentButton>
+        </div>
+    }
+    else if (_page is not null)
+    {
+        <div class="library-grid" aria-label="Source library">
+            <FluentDataGrid TGridItem="LibrarySourceListItem"
+                            Items="@_page.Items.AsQueryable()"
+                            ResizableColumns="true"
+                            GridTemplateColumns="minmax(220px, 2fr) 100px 110px minmax(150px, 1fr) 120px">
+                <TemplateColumn Title="Name" Context="source">
+                    <button class="source-link" @onclick="() => OpenSource(source.Id)">
+                        <strong>@source.DisplayName</strong>
+                        <small>@source.OriginalFileName</small>
+                    </button>
+                </TemplateColumn>
+                <TemplateColumn Title="Type" Context="source">
+                    @LibraryPresentation.SourceType(source.OriginalFileName, source.MediaType)
+                </TemplateColumn>
+                <TemplateColumn Title="Size" Context="source">
+                    @LibraryPresentation.FileSize(source.ByteLength)
+                </TemplateColumn>
+                <TemplateColumn Title="Imported" Context="source">
+                    <time datetime="@source.ImportedAt.ToString("O")">@source.ImportedAt.ToLocalTime().ToString("g")</time>
+                </TemplateColumn>
+                <TemplateColumn Title="Status" Context="source">
+                    <FluentBadge Appearance="BadgeAppearance.Tint">
+                        @LibraryPresentation.ProcessingState(source.ProcessingState)
+                    </FluentBadge>
+                </TemplateColumn>
+            </FluentDataGrid>
+        </div>
+
+        <nav class="pagination" aria-label="Library pages">
+            <FluentButton Disabled="@(_page.Page <= 1)" @onclick="PreviousPageAsync">Previous</FluentButton>
+            <span>Page @_page.Page of @_page.TotalPages</span>
+            <FluentButton Disabled="@(_page.Page >= _page.TotalPages)" @onclick="NextPageAsync">Next</FluentButton>
+        </nav>
+    }
+</FluentCard>
+
+@code {
+    private readonly Dictionary<int, ImportProgress> _progressItems = [];
+    private LibraryPage? _page;
+    private ImportFilesResult? _lastImportResult;
+    private CancellationTokenSource? _loadCancellation;
+    private CancellationTokenSource? _importCancellation;
+    private string? _searchText = string.Empty;
+    private string? _error;
+    private bool _loading = true;
+    private bool _importing;
+    private int _currentPage = 1;
+    private int _progressTotal;
+
+    private string SourceCountLabel => _page?.TotalCount switch
+    {
+        null => "Sources",
+        1 => "1 source",
+        var count => $"{count} sources",
+    };
+
+    private int CompletedProgressCount => _progressItems.Values.Count(item =>
+        item.State is ImportItemState.Imported or ImportItemState.AlreadyExists or ImportItemState.Failed or ImportItemState.Cancelled);
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loadCancellation?.Cancel();
+        _loadCancellation?.Dispose();
+        _loadCancellation = new CancellationTokenSource();
+        _loading = true;
+        _error = null;
+
+        try
+        {
+            _page = await Client.Library.GetSourcesAsync(
+                new LibraryQuery(_currentPage, 50, _searchText),
+                _loadCancellation.Token);
+        }
+        catch (OperationCanceledException) when (_loadCancellation.IsCancellationRequested)
+        {
+        }
+        catch
+        {
+            _error = "Please try again. No source data was changed.";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task SearchChangedAsync()
+    {
+        _currentPage = 1;
+        await LoadAsync();
+    }
+
+    private async Task ImportFilesAsync()
+    {
+        if (_importing)
+        {
+            return;
+        }
+
+        _importCancellation = new CancellationTokenSource();
+        _importing = true;
+        _lastImportResult = null;
+        _progressItems.Clear();
+        _progressTotal = 0;
+        _error = null;
+        var progress = new Progress<ImportProgress>(ReportImportProgress);
+
+        try
+        {
+            _lastImportResult = await Client.Library.PickAndImportFilesAsync(
+                progress,
+                _importCancellation.Token);
+            _currentPage = 1;
+            await LoadAsync();
+        }
+        catch (OperationCanceledException)
+        {
+            _lastImportResult = new ImportFilesResult(
+                _progressItems.Values
+                    .Where(item => item.State == ImportItemState.Cancelled)
+                    .Select(item => new ImportFileResult(item.FileName, item.Index, item.State, Message: item.Message))
+                    .ToArray());
+        }
+        catch
+        {
+            _error = "The file picker could not be opened. Please try again.";
+        }
+        finally
+        {
+            _importing = false;
+            _importCancellation.Dispose();
+            _importCancellation = null;
+        }
+    }
+
+    private void ReportImportProgress(ImportProgress progress)
+    {
+        _progressItems[progress.Index] = progress;
+        _progressTotal = progress.Total;
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private void CancelImport() => _importCancellation?.Cancel();
+
+    private void OpenSource(SourceDocumentId id) =>
+        Navigation.NavigateTo($"/library/{id.Value:D}");
+
+    private async Task PreviousPageAsync()
+    {
+        if (_currentPage > 1)
+        {
+            _currentPage--;
+            await LoadAsync();
+        }
+    }
+
+    private async Task NextPageAsync()
+    {
+        if (_page is not null && _currentPage < _page.TotalPages)
+        {
+            _currentPage++;
+            await LoadAsync();
+        }
+    }
+
+    private Task ReloadAsync() => LoadAsync();
+
+    public ValueTask DisposeAsync()
+    {
+        _loadCancellation?.Cancel();
+        _loadCancellation?.Dispose();
+        _importCancellation?.Cancel();
+        _importCancellation?.Dispose();
+        return ValueTask.CompletedTask;
+    }
+}

@@ -6,6 +6,10 @@ The production target is `net10.0-windows10.0.19041.0`. Prompt 00 proved the arc
 Windows, but the production host must retain the outstanding interactive checks below. Repository
 creation is not blocked by this debt.
 
+Prompt 04 implements the MAUI multi-file picker and the production Library grid. A successful
+Windows target build proves API and composition compatibility only; the interactive picker and
+restart smoke steps below still require a visible desktop session.
+
 ```mermaid
 flowchart LR
     BUILD[Production Windows build] --> LAUNCH[Visible launch]
@@ -26,6 +30,9 @@ flowchart LR
 - [ ] Validate grid selection.
 - [ ] Validate an interactive graph-node callback when the production graph exists.
 - [ ] Exercise the file picker.
+- [ ] Import one file, multiple files, a long filename, a Unicode filename, and a file under a path containing spaces.
+- [ ] Cancel the picker and confirm no synthetic import result is created.
+- [ ] Close and reopen Loregrove and confirm imported rows remain visible.
 - [ ] Exercise the folder picker.
 - [ ] Exercise clipboard writing.
 - [ ] Exercise SecureStorage behavior.

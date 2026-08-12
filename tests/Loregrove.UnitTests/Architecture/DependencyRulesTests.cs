@@ -80,6 +80,24 @@ public sealed class DependencyRulesTests
     }
 
     [Fact]
+    public void SharedUiDoesNotResolvePersistenceOrOpenFiles()
+    {
+        foreach (var token in new[]
+        {
+            "ILoregroveDbContext",
+            "DbContext",
+            "DbSet<",
+            "FileStream",
+            "File.Open",
+            "Directory.",
+            "CreateAsyncScope",
+        })
+        {
+            AssertSourceDoesNotContain("Loregrove.UI", token);
+        }
+    }
+
+    [Fact]
     public void SqliteProviderApisRemainIsolatedToSqliteInfrastructure()
     {
         foreach (var projectName in new[] { "Loregrove.Domain", "Loregrove.Application", "Loregrove.UI" })

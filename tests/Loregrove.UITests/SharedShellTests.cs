@@ -5,7 +5,7 @@ namespace Loregrove.UITests;
 public sealed class SharedShellTests
 {
     private static readonly string[] ExpectedRoutes =
-        ["/", "/ask", "/knowledge", "/library", "/review", "/search", "/settings"];
+        ["/", "/ask", "/knowledge", "/library", "/library/{DocumentId:guid}", "/review", "/search", "/settings"];
 
     [Fact]
     public void SharedUiDefinesEveryPrimaryRouteExactlyOnce()

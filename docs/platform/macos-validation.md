@@ -6,6 +6,9 @@ The production Mac Catalyst target builds from the shared codebase, but Prompt 0
 macOS. Every runtime, capability, security, and distribution item below remains open until exercised
 on a Mac.
 
+Prompt 04 uses MAUI's neutral `FileResult.OpenReadAsync` lifetime rather than retaining local paths.
+That preserves room for security-scoped access, but it does not complete the runtime validation gate.
+
 ```mermaid
 flowchart LR
     BUILD[Mac Catalyst build] --> RUNTIME[Runtime launch on macOS]

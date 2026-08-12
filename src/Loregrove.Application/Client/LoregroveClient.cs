@@ -21,11 +21,6 @@ public sealed class LoregroveClient(
     public IAskClient Ask { get; } = ask;
 }
 
-public sealed class LibraryClient : ILibraryClient
-{
-    public string Name => "Library";
-}
-
 public sealed class SearchClient : ISearchClient
 {
     public string Name => "Search";

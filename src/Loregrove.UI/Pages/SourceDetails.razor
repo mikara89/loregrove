@@ -1,0 +1,85 @@
+@page "/library/{DocumentId:guid}"
+@implements IAsyncDisposable
+@inject ILoregroveClient Client
+@inject NavigationManager Navigation
+
+<FluentCard class="page-card source-details-card">
+    <FluentButton Appearance="ButtonAppearance.Subtle" @onclick="BackToLibrary">← Back to Library</FluentButton>
+
+    @if (_loading)
+    {
+        <div class="message-state" role="status">
+            <FluentSpinner aria-label="Loading source details" />
+            <span>Loading source details…</span>
+        </div>
+    }
+    else if (_details is null)
+    {
+        <div class="message-state" role="alert">
+            <h1>Source not found</h1>
+            <p>This source is not present in the current local library.</p>
+        </div>
+    }
+    else
+    {
+        <p class="eyebrow">Captured source</p>
+        <h1>@_details.DisplayName</h1>
+        <dl class="source-metadata">
+            <div><dt>Original filename</dt><dd>@_details.OriginalFileName</dd></div>
+            <div><dt>Type</dt><dd>@LibraryPresentation.SourceType(_details.OriginalFileName, _details.MediaType)</dd></div>
+            <div><dt>Media type</dt><dd>@(_details.MediaType ?? "Not provided")</dd></div>
+            <div><dt>Size</dt><dd>@LibraryPresentation.FileSize(_details.ByteLength)</dd></div>
+            <div><dt>Imported</dt><dd><time datetime="@_details.ImportedAt.ToString("O")">@_details.ImportedAt.ToLocalTime().ToString("F")</time></dd></div>
+            <div><dt>Processing state</dt><dd>@LibraryPresentation.ProcessingState(_details.ProcessingState)</dd></div>
+        </dl>
+
+        <details class="technical-details">
+            <summary>Technical details</summary>
+            <dl class="source-metadata">
+                <div><dt>Content hash</dt><dd class="technical-value">@_details.ContentHash</dd></div>
+                <div><dt>Version ID</dt><dd class="technical-value">@_details.VersionId.Value</dd></div>
+                <div><dt>Document ID</dt><dd class="technical-value">@_details.Id.Value</dd></div>
+            </dl>
+        </details>
+    }
+</FluentCard>
+
+@code {
+    [Parameter]
+    public Guid DocumentId { get; set; }
+
+    private CancellationTokenSource? _cancellation;
+    private LibrarySourceDetails? _details;
+    private bool _loading = true;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _cancellation?.Cancel();
+        _cancellation?.Dispose();
+        _cancellation = new CancellationTokenSource();
+        _loading = true;
+
+        try
+        {
+            _details = await Client.Library.GetSourceAsync(
+                new SourceDocumentId(DocumentId),
+                _cancellation.Token);
+        }
+        catch (OperationCanceledException) when (_cancellation.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void BackToLibrary() => Navigation.NavigateTo("/library");
+
+    public ValueTask DisposeAsync()
+    {
+        _cancellation?.Cancel();
+        _cancellation?.Dispose();
+        return ValueTask.CompletedTask;
+    }
+}
