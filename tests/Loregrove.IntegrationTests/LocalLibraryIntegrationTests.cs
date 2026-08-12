@@ -127,6 +127,54 @@ public sealed class LocalLibraryIntegrationTests
     }
 
     [Fact]
+    public async Task ProcessingJobInsertFailureRollsBackExecutedInsertsAndClearsTrackedEntities()
+    {
+        using var directory = TemporaryDirectory.Create();
+        await using var services = CreateServices(directory.Path);
+        await InitializeAsync(services);
+        await using var scope = services.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<LoregroveDbContext>();
+        var service = scope.ServiceProvider.GetRequiredService<ImportSourceService>();
+
+        await context.Database.ExecuteSqlRawAsync(
+            """
+            CREATE TRIGGER FailProcessingJobInsert
+            BEFORE INSERT ON ProcessingJobs
+            BEGIN
+                SELECT RAISE(ABORT, 'injected processing job insert failure');
+            END;
+            """);
+
+        await using (var failedContent = new MemoryStream([10, 20, 30], writable: false))
+        {
+            var failure = await Assert.ThrowsAsync<DbUpdateException>(() => service.ImportAsync(
+                new ImportSourceCommand("Failed", "failed.bin", null, failedContent),
+                CancellationToken.None));
+            var sqliteFailure = Assert.IsType<SqliteException>(failure.InnerException);
+            Assert.Equal(19, sqliteFailure.SqliteErrorCode);
+            Assert.Contains("injected processing job insert failure", sqliteFailure.Message, StringComparison.Ordinal);
+        }
+
+        Assert.Empty(context.ChangeTracker.Entries());
+        Assert.Equal(0, await context.SourceDocuments.CountAsync());
+        Assert.Equal(0, await context.SourceDocumentVersions.CountAsync());
+        Assert.Equal(0, await context.ProcessingJobs.CountAsync());
+
+        await context.Database.ExecuteSqlRawAsync("DROP TRIGGER FailProcessingJobInsert;");
+        await using var successfulContent = new MemoryStream([40, 50, 60], writable: false);
+        var successful = await service.ImportAsync(
+            new ImportSourceCommand("Successful", "successful.bin", null, successfulContent),
+            CancellationToken.None);
+
+        Assert.Equal(ImportDisposition.Created, successful.Disposition);
+        Assert.Empty(context.ChangeTracker.Entries());
+        Assert.Equal(1, await context.SourceDocuments.CountAsync());
+        Assert.Equal(1, await context.SourceDocumentVersions.CountAsync());
+        Assert.Equal(1, await context.ProcessingJobs.CountAsync());
+        Assert.Equal(2, FinalObjectFiles(services.GetRequiredService<ILibraryPaths>()).Count());
+    }
+
+    [Fact]
     public async Task CancellationBeforeCommitRollsBackRelationalRowsAndLeavesSafeObject()
     {
         using var directory = TemporaryDirectory.Create();

@@ -100,6 +100,7 @@ public sealed class ImportSourceService(
                 cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            dbContext.ClearTrackedChanges();
 
             return new ImportSourceResult(
                 document.Id,
@@ -110,8 +111,7 @@ public sealed class ImportSourceService(
         catch (DbUpdateException exception)
             when (databaseExceptionClassifier.IsUniqueConstraintViolation(exception))
         {
-            await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
-            dbContext.ClearTrackedChanges();
+            await RollbackAndClearAsync(transaction).ConfigureAwait(false);
             existing = await FindExistingAsync(storedObject.ContentHash, CancellationToken.None).ConfigureAwait(false);
             if (existing is null)
             {
@@ -122,8 +122,20 @@ public sealed class ImportSourceService(
         }
         catch
         {
-            await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+            await RollbackAndClearAsync(transaction).ConfigureAwait(false);
             throw;
+        }
+    }
+
+    private async Task RollbackAndClearAsync(ILoregroveDbTransaction transaction)
+    {
+        try
+        {
+            await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+        finally
+        {
+            dbContext.ClearTrackedChanges();
         }
     }
 
