@@ -98,6 +98,22 @@ public sealed class DependencyRulesTests
     }
 
     [Fact]
+    public void SharedUiUsesFluentComponentsForApplicationWidgets()
+    {
+        var uiPath = Path.Combine(RepositoryRoot, "src", "Loregrove.UI");
+        var forbiddenElements = new[] { "button", "input", "select", "textarea", "details" };
+        var violations = Directory
+            .EnumerateFiles(uiPath, "*.razor", SearchOption.AllDirectories)
+            .Where(path => !IsBuildOutput(path))
+            .SelectMany(path => forbiddenElements
+                .Where(element => File.ReadAllText(path).Contains($"<{element}", StringComparison.OrdinalIgnoreCase))
+                .Select(element => $"{Path.GetRelativePath(RepositoryRoot, path)} uses raw <{element}>"))
+            .ToArray();
+
+        Assert.Empty(violations);
+    }
+
+    [Fact]
     public void SqliteProviderApisRemainIsolatedToSqliteInfrastructure()
     {
         foreach (var projectName in new[] { "Loregrove.Domain", "Loregrove.Application", "Loregrove.UI" })

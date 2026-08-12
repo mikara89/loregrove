@@ -56,13 +56,20 @@ public sealed class LibraryPresentationTests
 
         Assert.Contains("FluentDataGrid", library, StringComparison.Ordinal);
         Assert.Contains("FluentTextInput", library, StringComparison.Ordinal);
+        Assert.Contains("TextInputType.Search", library, StringComparison.Ordinal);
+        Assert.Contains("FluentAnchorButton", library, StringComparison.Ordinal);
+        Assert.Contains("FluentMessageBar", library, StringComparison.Ordinal);
+        Assert.Contains("FluentStack", library, StringComparison.Ordinal);
         Assert.Contains("Your library is empty", library, StringComparison.Ordinal);
         Assert.Contains("Loading library", library, StringComparison.Ordinal);
         Assert.Contains("ImportSummary", library, StringComparison.Ordinal);
         Assert.Contains("AlreadyExists", library, StringComparison.Ordinal);
-        Assert.Contains("role=\"alert\"", library, StringComparison.Ordinal);
+        Assert.Contains("MessageBarIntent.Error", library, StringComparison.Ordinal);
+        Assert.Contains("AriaLive.Polite", library, StringComparison.Ordinal);
         Assert.Contains("Technical details", details, StringComparison.Ordinal);
         Assert.Contains("Content hash", details, StringComparison.Ordinal);
+        Assert.Contains("FluentAccordion", details, StringComparison.Ordinal);
+        Assert.Contains("FluentMessageBar", details, StringComparison.Ordinal);
     }
 
     private static string FindRepositoryRoot()

@@ -1,10 +1,15 @@
 @page "/library"
 @implements IAsyncDisposable
 @inject ILoregroveClient Client
-@inject NavigationManager Navigation
 
 <FluentCard class="page-card library-card">
-    <div class="library-heading">
+    <FluentStack class="library-heading"
+                 Orientation="Orientation.Horizontal"
+                 HorizontalAlignment="HorizontalAlignment.SpaceBetween"
+                 VerticalAlignment="VerticalAlignment.Center"
+                 HorizontalGap="20"
+                 Wrap="true"
+                 Width="100%">
         <div>
             <p class="eyebrow">Durable local sources</p>
             <h1>Library</h1>
@@ -16,25 +21,37 @@
                       @onclick="ImportFilesAsync">
             Import files
         </FluentButton>
-    </div>
+    </FluentStack>
 
-    <div class="library-toolbar">
+    <FluentStack class="library-toolbar"
+                 Orientation="Orientation.Horizontal"
+                 HorizontalAlignment="HorizontalAlignment.SpaceBetween"
+                 VerticalAlignment="VerticalAlignment.Center"
+                 HorizontalGap="20"
+                 Wrap="true"
+                 Width="100%">
         <strong>@SourceCountLabel</strong>
         <FluentTextInput Label="Search library"
+                         TextInputType="TextInputType.Search"
                          Placeholder="Name or original filename"
                          Immediate="true"
                          ImmediateDelay="325"
                          @bind-Value="_searchText"
                          @bind-Value:after="SearchChangedAsync" />
-    </div>
+    </FluentStack>
 
     @if (_importing)
     {
         <section class="import-status" aria-labelledby="import-progress-title" aria-live="polite">
-            <div class="section-heading">
+            <FluentStack Orientation="Orientation.Horizontal"
+                         HorizontalAlignment="HorizontalAlignment.SpaceBetween"
+                         VerticalAlignment="VerticalAlignment.Center"
+                         HorizontalGap="20"
+                         Wrap="true"
+                         Width="100%">
                 <strong id="import-progress-title">Importing sources</strong>
                 <FluentButton Appearance="ButtonAppearance.Outline" @onclick="CancelImport">Cancel import</FluentButton>
-            </div>
+            </FluentStack>
             <FluentProgressBar Min="0" Max="@Math.Max(1, _progressTotal)" Value="@CompletedProgressCount" />
             @if (_progressItems.Count > 0)
             {
@@ -79,11 +96,15 @@
 
     @if (_error is not null)
     {
-        <div class="message-state error-state" role="alert">
-            <strong>The library could not be loaded.</strong>
-            <span>@_error</span>
-            <FluentButton @onclick="ReloadAsync">Try again</FluentButton>
-        </div>
+        <FluentMessageBar Title="@_errorTitle"
+                          Intent="MessageBarIntent.Error"
+                          AriaLive="AriaLive.Polite"
+                          AllowDismiss="false">
+            <ChildContent>@_error</ChildContent>
+            <ActionsTemplate>
+                <FluentButton @onclick="ReloadAsync">Try again</FluentButton>
+            </ActionsTemplate>
+        </FluentMessageBar>
     }
     else if (_loading)
     {
@@ -115,10 +136,12 @@
                             ResizableColumns="true"
                             GridTemplateColumns="minmax(220px, 2fr) 100px 110px minmax(150px, 1fr) 120px">
                 <TemplateColumn Title="Name" Context="source">
-                    <button class="source-link" @onclick="() => OpenSource(source.Id)">
+                    <FluentAnchorButton Href="@($"/library/{source.Id.Value:D}")"
+                                        Appearance="ButtonAppearance.Subtle"
+                                        class="source-link">
                         <strong>@source.DisplayName</strong>
                         <small>@source.OriginalFileName</small>
-                    </button>
+                    </FluentAnchorButton>
                 </TemplateColumn>
                 <TemplateColumn Title="Type" Context="source">
                     @LibraryPresentation.SourceType(source.OriginalFileName, source.MediaType)
@@ -153,6 +176,7 @@
     private CancellationTokenSource? _importCancellation;
     private string? _searchText = string.Empty;
     private string? _error;
+    private string? _errorTitle;
     private bool _loading = true;
     private bool _importing;
     private int _currentPage = 1;
@@ -180,8 +204,13 @@
             {
                 _loading = true;
                 _error = null;
+                _errorTitle = null;
             },
-            _ => _error = "Please try again. No source data was changed.",
+            _ =>
+            {
+                _errorTitle = "The library could not be loaded.";
+                _error = "Please try again. No source data was changed.";
+            },
             () => _loading = false);
     }
 
@@ -204,6 +233,7 @@
         _progressItems.Clear();
         _progressTotal = 0;
         _error = null;
+        _errorTitle = null;
         var progress = new Progress<ImportProgress>(ReportImportProgress);
 
         try
@@ -224,6 +254,7 @@
         }
         catch
         {
+            _errorTitle = "Files could not be selected.";
             _error = "The file picker could not be opened. Please try again.";
         }
         finally
@@ -242,9 +273,6 @@
     }
 
     private void CancelImport() => _importCancellation?.Cancel();
-
-    private void OpenSource(SourceDocumentId id) =>
-        Navigation.NavigateTo($"/library/{id.Value:D}");
 
     private async Task PreviousPageAsync()
     {

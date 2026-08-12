@@ -107,6 +107,19 @@ states. Rows navigate to a shared Razor detail route showing trusted metadata la
 hash and identifier details. Status text accompanies its visual badge, and import outcomes are
 announced through live regions.
 
+Application widgets follow the repository's Fluent-first rule: row navigation uses the pinned v5
+package's `FluentAnchorButton`, the search input uses `FluentTextInput` with the native search input
+type, errors use `FluentMessageBar`, technical details use `FluentAccordion`, and repeated flex
+composition uses `FluentStack`. The pinned `5.0.0-rc.4-26180.1` package does not expose the later
+`FluentAnchor` or `FluentSearch` component types, so adopting those exact names requires the existing
+Fluent dependency-upgrade and Hybrid runtime validation path rather than a Prompt 04-only upgrade.
+
+`FluentPaginator` was evaluated but is coupled to a `PaginationState` whose total count is assigned by
+an associated grid after it loads the whole queryable result. Loregrove deliberately loads only one
+bounded database page into the grid, so attaching that paginator would either report the current page
+as the total or paginate the page a second time. The semantic `nav` with Fluent buttons therefore
+remains the compatible Fluent-first server-pagination control.
+
 ## Drag/drop reuse
 
 Native drag/drop remains out of scope. ADR-007 can later adapt dropped native handles into the same

@@ -1,10 +1,9 @@
 @page "/library/{DocumentId:guid}"
 @implements IAsyncDisposable
 @inject ILoregroveClient Client
-@inject NavigationManager Navigation
 
 <FluentCard class="page-card source-details-card">
-    <FluentButton Appearance="ButtonAppearance.Subtle" @onclick="BackToLibrary">← Back to Library</FluentButton>
+    <FluentAnchorButton Href="/library" Appearance="ButtonAppearance.Subtle">← Back to Library</FluentAnchorButton>
 
     @if (_loading)
     {
@@ -15,18 +14,12 @@
     }
     else if (_details is null)
     {
-        <div class="message-state" role="alert">
-            @if (_error is null)
-            {
-                <h1>Source not found</h1>
-                <p>This source is not present in the current local library.</p>
-            }
-            else
-            {
-                <h1>Source details could not be loaded</h1>
-                <p>@_error</p>
-            }
-        </div>
+        <FluentMessageBar Title="@(_error is null ? "Source not found" : "Source details could not be loaded")"
+                          Intent="@(_error is null ? MessageBarIntent.Warning : MessageBarIntent.Error)"
+                          AriaLive="AriaLive.Polite"
+                          AllowDismiss="false">
+            @(_error ?? "This source is not present in the current local library.")
+        </FluentMessageBar>
     }
     else
     {
@@ -41,14 +34,15 @@
             <div><dt>Processing state</dt><dd>@LibraryPresentation.ProcessingState(_details.ProcessingState)</dd></div>
         </dl>
 
-        <details class="technical-details">
-            <summary>Technical details</summary>
-            <dl class="source-metadata">
-                <div><dt>Content hash</dt><dd class="technical-value">@_details.ContentHash</dd></div>
-                <div><dt>Version ID</dt><dd class="technical-value">@_details.VersionId.Value</dd></div>
-                <div><dt>Document ID</dt><dd class="technical-value">@_details.Id.Value</dd></div>
-            </dl>
-        </details>
+        <FluentAccordion class="technical-details" Block="true">
+            <FluentAccordionItem Header="Technical details" HeadingLevel="2">
+                <dl class="source-metadata">
+                    <div><dt>Content hash</dt><dd class="technical-value">@_details.ContentHash</dd></div>
+                    <div><dt>Version ID</dt><dd class="technical-value">@_details.VersionId.Value</dd></div>
+                    <div><dt>Document ID</dt><dd class="technical-value">@_details.Id.Value</dd></div>
+                </dl>
+            </FluentAccordionItem>
+        </FluentAccordion>
     }
 </FluentCard>
 
@@ -79,8 +73,6 @@
             },
             () => _loading = false);
     }
-
-    private void BackToLibrary() => Navigation.NavigateTo("/library");
 
     public ValueTask DisposeAsync()
     {

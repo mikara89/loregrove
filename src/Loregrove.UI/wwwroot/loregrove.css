@@ -89,13 +89,9 @@ main {
     margin-bottom: 8px;
 }
 
-.library-heading,
-.library-toolbar,
-.section-heading,
 .pagination {
     display: flex;
     align-items: center;
-    justify-content: space-between;
     gap: 20px;
 }
 
@@ -114,12 +110,7 @@ main {
     display: grid;
     gap: 3px;
     width: 100%;
-    border: 0;
-    padding: 4px 0;
-    background: transparent;
-    color: inherit;
-    cursor: pointer;
-    font: inherit;
+    justify-content: stretch;
     text-align: left;
 }
 
@@ -128,11 +119,6 @@ main {
     color: #5d6b63;
     text-overflow: ellipsis;
     white-space: nowrap;
-}
-
-.source-link:hover strong,
-.source-link:focus-visible strong {
-    text-decoration: underline;
 }
 
 .message-state,
@@ -155,10 +141,6 @@ main {
 
 .empty-library p {
     max-width: 600px;
-}
-
-.error-state {
-    border-color: #b42318;
 }
 
 .import-results {
@@ -214,12 +196,6 @@ main {
 .technical-details {
     border-top: 1px solid #d8ded8;
     padding-top: 20px;
-}
-
-.technical-details summary {
-    margin-bottom: 20px;
-    cursor: pointer;
-    font-weight: 600;
 }
 
 .technical-value {
@@ -283,10 +259,4 @@ main {
         padding: 24px 16px;
     }
 
-    .library-heading,
-    .library-toolbar,
-    .section-heading {
-        align-items: stretch;
-        flex-direction: column;
-    }
 }
