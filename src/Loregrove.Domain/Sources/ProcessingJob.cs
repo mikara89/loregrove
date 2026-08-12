@@ -9,7 +9,8 @@ public sealed class ProcessingJob
         DateTimeOffset createdAt,
         int attemptCount,
         DateTimeOffset? updatedAt = null,
-        string? lastError = null)
+        string? lastError = null,
+        ProcessingStage stage = ProcessingStage.Parsing)
     {
         if (id.Value == Guid.Empty)
         {
@@ -30,6 +31,7 @@ public sealed class ProcessingJob
         Id = id;
         DocumentVersionId = documentVersionId;
         State = state;
+        Stage = stage;
         CreatedAt = createdAt;
         AttemptCount = attemptCount;
         UpdatedAt = updatedAt;
@@ -42,6 +44,8 @@ public sealed class ProcessingJob
 
     public ProcessingJobState State { get; private set; }
 
+    public ProcessingStage Stage { get; private set; }
+
     public DateTimeOffset CreatedAt { get; }
 
     public DateTimeOffset? UpdatedAt { get; private set; }
@@ -49,6 +53,36 @@ public sealed class ProcessingJob
     public int AttemptCount { get; private set; }
 
     public string? LastError { get; private set; }
+
+    public void CompleteParsing(DateTimeOffset completedAt)
+    {
+        State = ProcessingJobState.Pending;
+        Stage = ProcessingStage.Chunking;
+        UpdatedAt = completedAt;
+        LastError = null;
+    }
+
+    public void FailParsing(DateTimeOffset failedAt, string error)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(error);
+        if (error.Length > 2000)
+        {
+            throw new ArgumentException("The processing error must not exceed 2000 characters.", nameof(error));
+        }
+
+        State = ProcessingJobState.Failed;
+        Stage = ProcessingStage.Parsing;
+        UpdatedAt = failedAt;
+        LastError = error;
+    }
+
+    public void ReturnParsingToPending(DateTimeOffset updatedAt)
+    {
+        State = ProcessingJobState.Pending;
+        Stage = ProcessingStage.Parsing;
+        UpdatedAt = updatedAt;
+        LastError = null;
+    }
 
     public bool RecoverInterrupted(DateTimeOffset recoveredAt)
     {
@@ -59,6 +93,7 @@ public sealed class ProcessingJob
 
         State = ProcessingJobState.Pending;
         UpdatedAt = recoveredAt;
+        LastError = null;
         return true;
     }
 }

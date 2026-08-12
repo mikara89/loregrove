@@ -2,7 +2,8 @@
 
 Prompt 04 turns the durable capture and SQLite foundation into Loregrove's first complete desktop
 workflow: select local files, capture them, query the durable library, and inspect source metadata.
-Parsing and enrichment remain separate later stages.
+TXT and Markdown parsing now run through a separate durable Application use case after capture.
+Complex formats remain pending for the later Docling path.
 
 ## Boundaries
 

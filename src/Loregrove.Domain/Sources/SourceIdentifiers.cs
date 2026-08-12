@@ -14,3 +14,13 @@ public readonly record struct ProcessingJobId(Guid Value)
 {
     public static ProcessingJobId New() => new(Guid.NewGuid());
 }
+
+public readonly record struct ParsedArtifactId(Guid Value)
+{
+    public static ParsedArtifactId New() => new(Guid.NewGuid());
+}
+
+public readonly record struct SourceAnchorId(Guid Value)
+{
+    public static SourceAnchorId New() => new(Guid.NewGuid());
+}

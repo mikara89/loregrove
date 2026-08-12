@@ -14,6 +14,10 @@ public sealed class LoregroveDbContext(DbContextOptions<LoregroveDbContext> opti
 
     public DbSet<ProcessingJob> ProcessingJobs => Set<ProcessingJob>();
 
+    public DbSet<ParsedArtifact> ParsedArtifacts => Set<ParsedArtifact>();
+
+    public DbSet<SourceAnchor> SourceAnchors => Set<SourceAnchor>();
+
     public async Task<ILoregroveDbTransaction> BeginTransactionAsync(CancellationToken cancellationToken) =>
         new LoregroveDbTransaction(
             await Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false));

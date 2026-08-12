@@ -92,10 +92,43 @@ public sealed class DependencyRulesTests
             "File.Open",
             "Directory.",
             "CreateAsyncScope",
+            "IDocumentParser",
+            "IArtifactStore",
+            "TextDocumentParser",
+            "MarkdownDocumentParser",
         })
         {
             AssertSourceDoesNotContain("Loregrove.UI", token);
         }
+    }
+
+    [Fact]
+    public void ParserImplementationsDoNotDependOnStorageProvidersOrPresentationFrameworks()
+    {
+        var parserRoot = Path.Combine(RepositoryRoot, "src", "Loregrove.Application", "Parsing");
+        var implementationFiles = new[]
+        {
+            Path.Combine(parserRoot, "TextDocumentParser.cs"),
+            Path.Combine(parserRoot, "MarkdownDocumentParser.cs"),
+        };
+        var forbiddenTokens = new[]
+        {
+            "Microsoft.EntityFrameworkCore",
+            "Microsoft.Data.Sqlite",
+            "Loregrove.Infrastructure",
+            "Microsoft.Maui",
+            "Microsoft.FluentUI",
+            "IObjectStore",
+            "IArtifactStore",
+            "ProcessingJob",
+        };
+
+        var violations = implementationFiles.SelectMany(path => forbiddenTokens
+            .Where(token => File.ReadAllText(path).Contains(token, StringComparison.Ordinal))
+            .Select(token => $"{Path.GetFileName(path)} contains {token}"))
+            .ToArray();
+
+        Assert.Empty(violations);
     }
 
     [Fact]

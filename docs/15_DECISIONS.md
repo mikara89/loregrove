@@ -18,6 +18,9 @@
 | Files | Content-addressed local storage |
 | Source object identity | Lowercase SHA-256 with `<prefix>/<hash>` keys |
 | Capture transaction | Finalize object first; document + version + pending job commit atomically later |
+| Parsed evidence | Immutable versioned ParsedArtifacts + structured SourceAnchors; original source remains authoritative |
+| Parser identity | Deterministic parser fingerprint over identity, version, schema, and configuration |
+| Parsed artifact files | Content-addressed JSON under `artifacts/parsed/<prefix>/<sha256>.json` |
 | AI runtimes | User-managed; Loregrove only calls configured providers |
 | Docling | Optional on-demand managed child process or remote |
 | Knowledge truth model | Evidence separate from generated interpretation |

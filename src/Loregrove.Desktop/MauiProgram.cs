@@ -1,6 +1,7 @@
 using Loregrove.Application.Client;
 using Loregrove.Application.Library;
 using Loregrove.Application.Platform;
+using Loregrove.Application.Parsing;
 using Loregrove.Application.Security;
 using Loregrove.Application.Storage;
 using Loregrove.Infrastructure.Desktop;
@@ -41,11 +42,13 @@ public static class MauiProgram
         builder.Services.AddSingleton<IDesktopPlatform, MauiDesktopPlatform>();
         builder.Services.AddSingleton<IDesktopDropAdapter, UnavailableDesktopDropAdapter>();
         builder.Services.AddSingleton<ISecretStore, UnavailableSecretStore>();
+        builder.Services.AddLoregroveParsing();
 
         var libraryPaths = new LocalLibraryPaths(Path.Combine(FileSystem.AppDataDirectory, "Library"));
         builder.Services.AddSingleton<ILibraryPaths>(libraryPaths);
         builder.Services.AddSingleton<ILibraryDirectoryInitializer, LocalLibraryInitializer>();
         builder.Services.AddSingleton<IObjectStore, LocalObjectStore>();
+        builder.Services.AddSingleton<IArtifactStore, LocalArtifactStore>();
         builder.Services.AddLoregroveSqlite(libraryPaths.Database);
 
 #if DEBUG

@@ -15,13 +15,19 @@ public sealed class SourceDomainTests
         var documentId = new SourceDocumentId(value);
         var versionId = new SourceDocumentVersionId(value);
         var jobId = new ProcessingJobId(value);
+        var artifactId = new ParsedArtifactId(value);
+        var anchorId = new SourceAnchorId(value);
 
         Assert.Equal(value, documentId.Value);
         Assert.Equal(value, versionId.Value);
         Assert.Equal(value, jobId.Value);
+        Assert.Equal(value, artifactId.Value);
+        Assert.Equal(value, anchorId.Value);
         Assert.IsType<SourceDocumentId>(documentId);
         Assert.IsType<SourceDocumentVersionId>(versionId);
         Assert.IsType<ProcessingJobId>(jobId);
+        Assert.IsType<ParsedArtifactId>(artifactId);
+        Assert.IsType<SourceAnchorId>(anchorId);
     }
 
     [Fact]
@@ -96,6 +102,7 @@ public sealed class SourceDomainTests
         Assert.Equal(versionId, job.DocumentVersionId);
         Assert.Equal(ProcessingJobState.Pending, job.State);
         Assert.Equal(0, job.AttemptCount);
+        Assert.Equal(ProcessingStage.Parsing, job.Stage);
         Assert.Contains(SourceProcessingState.PendingProcessing, Enum.GetValues<SourceProcessingState>());
     }
 
@@ -130,6 +137,22 @@ public sealed class SourceDomainTests
         Assert.False(job.RecoverInterrupted(DateTimeOffset.UtcNow));
         Assert.Equal(ProcessingJobState.Completed, job.State);
         Assert.Null(job.UpdatedAt);
+    }
+
+    [Fact]
+    public void GenericInterruptedJobRecoveryPreservesItsPipelineStage()
+    {
+        var job = new ProcessingJob(
+            ProcessingJobId.New(),
+            SourceDocumentVersionId.New(),
+            ProcessingJobState.Processing,
+            DateTimeOffset.UtcNow,
+            attemptCount: 1,
+            stage: ProcessingStage.Chunking);
+
+        Assert.True(job.RecoverInterrupted(DateTimeOffset.UtcNow));
+        Assert.Equal(ProcessingJobState.Pending, job.State);
+        Assert.Equal(ProcessingStage.Chunking, job.Stage);
     }
 
     [Theory]

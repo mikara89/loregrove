@@ -11,6 +11,10 @@ public interface ILoregroveDbContext
 
     DbSet<ProcessingJob> ProcessingJobs { get; }
 
+    DbSet<ParsedArtifact> ParsedArtifacts { get; }
+
+    DbSet<SourceAnchor> SourceAnchors { get; }
+
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 
     Task<ILoregroveDbTransaction> BeginTransactionAsync(CancellationToken cancellationToken);
