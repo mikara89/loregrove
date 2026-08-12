@@ -14,10 +14,11 @@ Store original bytes as immutable local objects addressed by the lowercase SHA-2
 complete stream. The portable object key is `<hash[0..2]>/<hash>`. Write into a unique temporary file,
 flush and close it, then move it to the final path without overwrite.
 
-The Application layer owns `IObjectStore`, `ILibraryPaths`, and the source repository boundary.
+The Application layer owns `IObjectStore`, `ILibraryPaths`, and the EF Core transaction orchestration.
 `Loregrove.Infrastructure.LocalFiles` owns path translation and filesystem atomicity. Metadata
 persistence atomically deduplicates by content hash and commits the document, version, and pending job
-together only after the object is finalized.
+together only after the object is finalized. Infrastructure.Sqlite implements the Application-facing
+DbContext and provider-specific uniqueness translation.
 
 ```mermaid
 flowchart LR

@@ -55,14 +55,42 @@ public sealed class DependencyRulesTests
         Assert.Equal("Loregrove.Application", ProjectNameFromReference(projectReference));
     }
 
-    [Theory]
-    [InlineData("Loregrove.Domain")]
-    [InlineData("Loregrove.Application")]
-    public void CoreProjectsHaveNoPackageDependencies(string projectName)
+    [Fact]
+    public void DomainHasNoPackageDependencies()
     {
-        var project = LoadProject(projectName);
+        var project = LoadProject("Loregrove.Domain");
 
         Assert.Empty(project.Descendants("PackageReference"));
+    }
+
+    [Fact]
+    public void ApplicationReferencesEfCoreButNotSqliteProvider()
+    {
+        var packages = PackageNames("Loregrove.Application");
+
+        Assert.Contains("Microsoft.EntityFrameworkCore", packages);
+        Assert.DoesNotContain(packages, name => name.Contains("Sqlite", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void DomainAndUiSourceDoNotUseEntityFrameworkCore()
+    {
+        AssertSourceDoesNotContain("Loregrove.Domain", "Microsoft.EntityFrameworkCore");
+        AssertSourceDoesNotContain("Loregrove.UI", "Microsoft.EntityFrameworkCore");
+    }
+
+    [Fact]
+    public void SqliteProviderApisRemainIsolatedToSqliteInfrastructure()
+    {
+        foreach (var projectName in new[] { "Loregrove.Domain", "Loregrove.Application", "Loregrove.UI" })
+        {
+            Assert.DoesNotContain(
+                PackageNames(projectName),
+                name => name.Contains("Sqlite", StringComparison.OrdinalIgnoreCase));
+            AssertSourceDoesNotContain(projectName, "Microsoft.Data.Sqlite");
+            AssertSourceDoesNotContain(projectName, "SqliteConnection");
+            AssertSourceDoesNotContain(projectName, "SqliteException");
+        }
     }
 
     [Fact]
@@ -129,6 +157,24 @@ public sealed class DependencyRulesTests
     }
 
     private static XDocument LoadProject(string projectName) => XDocument.Load(ProjectPath(projectName));
+
+    private static string[] PackageNames(string projectName) => LoadProject(projectName)
+        .Descendants("PackageReference")
+        .Select(reference => reference.Attribute("Include")?.Value ?? string.Empty)
+        .ToArray();
+
+    private static void AssertSourceDoesNotContain(string projectName, string token)
+    {
+        var projectPath = Path.Combine(RepositoryRoot, "src", projectName);
+        var violations = Directory.EnumerateFiles(projectPath, "*", SearchOption.AllDirectories)
+            .Where(path => !IsBuildOutput(path))
+            .Where(path => Path.GetExtension(path) is ".cs" or ".razor")
+            .Where(path => File.ReadAllText(path).Contains(token, StringComparison.Ordinal))
+            .Select(path => Path.GetRelativePath(RepositoryRoot, path))
+            .ToArray();
+
+        Assert.Empty(violations);
+    }
 
     private static string ProjectNameFromReference(string? projectReference)
     {

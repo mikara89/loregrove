@@ -167,7 +167,10 @@ Original files are immutable content-addressed objects.
 - UI references Application-facing contracts/view models, never Infrastructure.
 - Infrastructure references Application and reaches Domain only through Application-owned boundaries.
 - Desktop composes UI + Infrastructure.
-- Domain/Application do not reference MAUI, Razor, Fluent UI, EF Core, Docling DTOs, provider SDKs, SQLite, or direct OS APIs.
+- Domain does not reference EF Core or other infrastructure libraries.
+- Application may use provider-neutral EF Core APIs as its persistence programming model.
+- UI does not reference EF Core, and SQLite provider APIs remain isolated to Infrastructure.Sqlite.
+- Domain/Application do not reference MAUI, Razor, Fluent UI, Docling DTOs, provider SDKs, SQLite provider APIs, or direct OS APIs.
 - Linux GTK packages exist only in the later Linux head/integration project.
 
 ## Architectural invariants

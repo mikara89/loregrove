@@ -2,9 +2,9 @@ using Loregrove.Application.Storage;
 
 namespace Loregrove.Infrastructure.LocalFiles;
 
-public sealed class LocalLibraryInitializer(ILibraryPaths paths) : ILibraryInitializer
+public sealed class LocalLibraryInitializer(ILibraryPaths paths) : ILibraryDirectoryInitializer
 {
-    public Task InitializeAsync(CancellationToken cancellationToken)
+    public Task InitializeDirectoriesAsync(CancellationToken cancellationToken)
     {
         var directories = new[]
         {
@@ -24,4 +24,7 @@ public sealed class LocalLibraryInitializer(ILibraryPaths paths) : ILibraryIniti
 
         return Task.CompletedTask;
     }
+
+    public Task InitializeAsync(CancellationToken cancellationToken) =>
+        InitializeDirectoriesAsync(cancellationToken);
 }

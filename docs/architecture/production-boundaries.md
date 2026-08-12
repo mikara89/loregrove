@@ -62,9 +62,17 @@ Prompt 02 adds:
 - crash-safe SHA-256 content-addressed object storage in `Infrastructure.LocalFiles`;
 - exact duplicate, cancellation, and concurrent-write behavior.
 
-SQLite entities and migrations, parsing, search, embeddings, provider SDKs, Docling process
-management, and knowledge extraction remain deferred to later milestones. See
-[local source capture](source-capture.md) for the capture and future transaction semantics.
+Prompt 03 adds:
+
+- EF Core as an intentional Application persistence programming model;
+- SQLite tables and the initial migration in `Infrastructure.Sqlite`;
+- atomic source document, version, and processing-job capture;
+- durable processing jobs and interrupted-job recovery;
+- WAL, foreign-key, busy-timeout, and integrity diagnostics.
+
+Parsing, search, embeddings, provider SDKs, Docling process management, and knowledge extraction
+remain deferred. See [local source capture](source-capture.md) and
+[SQLite persistence](sqlite-persistence.md).
 
 ## Pinned baseline
 
@@ -76,6 +84,7 @@ management, and knowledge extraction remain deferred to later milestones. See
 | ASP.NET Core Components Web | `10.0.10` |
 | Fluent UI Blazor | `5.0.0-rc.4-26180.1` |
 | xUnit | `2.9.3` |
+| EF Core | `10.0.10` |
 
 Fluent UI Blazor v5 remains pinned to the Prompt 00 prerelease RC. The host loads
 `initializersLoader.webview.js` before `blazor.webview.js`; removing this workaround requires a

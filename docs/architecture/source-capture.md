@@ -9,8 +9,8 @@ flowchart TD
     PICK[Selected source] --> IMPORT[Import application service]
     IMPORT --> OBJECT[IObjectStore]
     OBJECT --> HASH[SHA-256 object]
-    HASH --> REPO[Source metadata]
-    REPO --> JOB[Pending processing job]
+    HASH --> DB[Application DbContext]
+    DB --> JOB[Pending processing job]
 
     OBJECT --> DISK[(Local immutable objects)]
 ```
@@ -58,9 +58,9 @@ and closed before it is moved to its final name. The move never overwrites an ex
 concurrent writer wins between the existence decision and the move, the loser reuses the completed
 object and removes its temporary copy. A final object path therefore never exposes a partial write.
 
-Exact byte duplicates have the same hash and reuse the same stored object. The metadata repository's
-atomic `TryAddCaptureAsync` operation also enforces exact-content uniqueness, so renamed copies return
-the existing document and version with an `AlreadyExists` disposition. Changed bytes receive a new
+Exact byte duplicates have the same hash and reuse the same stored object. The database's unique
+content-hash constraint enforces exact-content uniqueness, so renamed copies return the existing
+document and version with an `AlreadyExists` disposition. Changed bytes receive a new
 hash and are captured as an independent logical source; Loregrove does not infer a version relationship
 during capture.
 
@@ -83,9 +83,9 @@ flowchart LR
     TX --> TXDATA
 ```
 
-The object file is intentionally outside the future SQLite transaction. `SourceDocument`, its initial
-immutable `SourceDocumentVersion`, and the pending `ProcessingJob` must commit together behind the
-repository boundary. Processing cannot begin before this succeeds.
+The object file is intentionally outside the SQLite transaction. `SourceDocument`, its initial
+immutable `SourceDocumentVersion`, and the pending `ProcessingJob` commit together in one EF Core
+transaction owned by `ImportSourceService`. Processing cannot begin before this succeeds.
 
 If the relational commit fails, the finalized content-addressed object remains. This is a safe and
 expected orphan state: the object is immutable, may already be shared by another capture, and can be
