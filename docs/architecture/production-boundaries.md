@@ -70,9 +70,19 @@ Prompt 03 adds:
 - durable processing jobs and interrupted-job recovery;
 - WAL, foreign-key, busy-timeout, and integrity diagnostics.
 
+Prompt 04 adds:
+
+- the real paged and filtered shared Fluent Library screen and source-detail route;
+- a UI-facing library facade with no tracked entities or persistence types;
+- MAUI multi-file picking represented by neutral stream-opening handles;
+- bounded per-file import coordination with one scope and DbContext per active import;
+- per-file progress, duplicate, cancellation, and safe failure outcomes;
+- automatic SQLite refresh and restart-durability coverage.
+
 Parsing, search, embeddings, provider SDKs, Docling process management, and knowledge extraction
 remain deferred. See [local source capture](source-capture.md) and
-[SQLite persistence](sqlite-persistence.md).
+[SQLite persistence](sqlite-persistence.md), and
+[Library UI and source import](library-ui-and-import.md).
 
 ## Pinned baseline
 

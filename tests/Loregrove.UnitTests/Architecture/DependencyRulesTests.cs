@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using System.Xml.Linq;
 
 namespace Loregrove.UnitTests.Architecture;
@@ -77,6 +78,59 @@ public sealed class DependencyRulesTests
     {
         AssertSourceDoesNotContain("Loregrove.Domain", "Microsoft.EntityFrameworkCore");
         AssertSourceDoesNotContain("Loregrove.UI", "Microsoft.EntityFrameworkCore");
+    }
+
+    [Fact]
+    public void SharedUiDoesNotResolvePersistenceOrOpenFiles()
+    {
+        foreach (var token in new[]
+        {
+            "ILoregroveDbContext",
+            "DbContext",
+            "DbSet<",
+            "FileStream",
+            "File.Open",
+            "Directory.",
+            "CreateAsyncScope",
+        })
+        {
+            AssertSourceDoesNotContain("Loregrove.UI", token);
+        }
+    }
+
+    [Fact]
+    public void SharedUiUsesFluentComponentsForApplicationWidgets()
+    {
+        var uiPath = Path.Combine(RepositoryRoot, "src", "Loregrove.UI");
+        var forbiddenElements = new[] { "button", "input", "select", "textarea", "details" };
+        var violations = Directory
+            .EnumerateFiles(uiPath, "*.razor", SearchOption.AllDirectories)
+            .Where(path => !IsBuildOutput(path))
+            .SelectMany(path =>
+            {
+                var content = File.ReadAllText(path);
+                return forbiddenElements
+                    .Where(element => ContainsRawHtmlElement(content, element))
+                    .Select(element => $"{Path.GetRelativePath(RepositoryRoot, path)} uses raw <{element}>");
+            })
+            .ToArray();
+
+        Assert.Empty(violations);
+    }
+
+    [Theory]
+    [InlineData("<input>", "input", true)]
+    [InlineData("<input />", "input", true)]
+    [InlineData("<input type=\"text\">", "input", true)]
+    [InlineData("<InputFile />", "input", false)]
+    [InlineData("<InputText />", "input", false)]
+    [InlineData("<ButtonGroup>", "button", false)]
+    public void RawHtmlElementMatcherRequiresTagBoundary(
+        string content,
+        string element,
+        bool expected)
+    {
+        Assert.Equal(expected, ContainsRawHtmlElement(content, element));
     }
 
     [Fact]
@@ -188,6 +242,12 @@ public sealed class DependencyRulesTests
     private static bool IsBuildOutput(string path) =>
         path.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase) ||
         path.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase);
+
+    private static bool ContainsRawHtmlElement(string content, string element) =>
+        Regex.IsMatch(
+            content,
+            $@"<\s*{Regex.Escape(element)}(?=[\s/>])",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
     private static string FindRepositoryRoot()
     {

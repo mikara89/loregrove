@@ -1,3 +1,7 @@
+using Loregrove.Application.Library;
+using Loregrove.Application.Platform;
+using Loregrove.Domain.Sources;
+
 namespace Loregrove.Application.Client;
 
 /// <summary>
@@ -16,7 +20,25 @@ public interface ILoregroveClient
     IAskClient Ask { get; }
 }
 
-public interface ILibraryClient : IApplicationAreaClient;
+public interface ILibraryClient : IApplicationAreaClient
+{
+    Task<LibraryPage> GetSourcesAsync(
+        LibraryQuery query,
+        CancellationToken cancellationToken);
+
+    Task<LibrarySourceDetails?> GetSourceAsync(
+        SourceDocumentId documentId,
+        CancellationToken cancellationToken);
+
+    Task<ImportFilesResult> PickAndImportFilesAsync(
+        IProgress<ImportProgress>? progress,
+        CancellationToken cancellationToken);
+
+    Task<ImportFilesResult> ImportFilesAsync(
+        IReadOnlyList<PickedFile> files,
+        IProgress<ImportProgress>? progress,
+        CancellationToken cancellationToken);
+}
 
 public interface ISearchClient : IApplicationAreaClient;
 

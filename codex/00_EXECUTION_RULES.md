@@ -22,6 +22,10 @@ Apply these rules to every implementation prompt.
 16. Keep literal repository trees, commands, JSON, code, and schemas in ordinary code fences.
 17. Pin package versions through Central Package Management; do not use floating production dependencies.
 18. Treat experimental dependencies as isolated adapters with an explicit exit path.
+19. In shared Razor UI, prefer Fluent UI v5 for interactive controls, navigation affordances,
+    feedback surfaces, disclosure controls, data widgets, and standard layout primitives. Keep native
+    semantic HTML for document structure; do not hand-build raw HTML widgets when a suitable Fluent
+    component exists.
 
 ## Git
 

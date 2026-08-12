@@ -75,8 +75,133 @@ main {
 }
 
 .content {
-    max-width: 1040px;
+    max-width: 1240px;
     padding: 48px 32px;
+}
+
+.library-card {
+    display: grid;
+    gap: 24px;
+}
+
+.library-card h1,
+.source-details-card h1 {
+    margin-bottom: 8px;
+}
+
+.pagination {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+}
+
+.library-toolbar fluent-text-input {
+    width: min(100%, 360px);
+}
+
+.library-grid {
+    min-width: 0;
+    overflow-x: auto;
+    border: 1px solid #d8ded8;
+    border-radius: 10px;
+}
+
+.source-link {
+    display: grid;
+    gap: 3px;
+    width: 100%;
+    justify-content: stretch;
+    text-align: left;
+}
+
+.source-link small {
+    overflow: hidden;
+    color: #5d6b63;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.message-state,
+.empty-library,
+.import-status {
+    display: grid;
+    justify-items: start;
+    gap: 12px;
+    border: 1px solid #d8ded8;
+    border-radius: 10px;
+    padding: 28px;
+    background: #f8faf7;
+}
+
+.empty-library {
+    justify-items: center;
+    padding: 64px 28px;
+    text-align: center;
+}
+
+.empty-library p {
+    max-width: 600px;
+}
+
+.import-results {
+    display: grid;
+    width: 100%;
+    gap: 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.import-results li {
+    display: grid;
+    grid-template-columns: minmax(180px, 1fr) auto;
+    gap: 4px 16px;
+}
+
+.import-results small {
+    grid-column: 1 / -1;
+    color: #5d6b63;
+}
+
+.pagination {
+    justify-content: center;
+}
+
+.source-details-card {
+    display: grid;
+    gap: 24px;
+}
+
+.source-metadata {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 18px;
+    margin: 0;
+}
+
+.source-metadata div {
+    min-width: 0;
+}
+
+.source-metadata dt {
+    margin-bottom: 4px;
+    color: #5d6b63;
+    font-size: 0.85rem;
+}
+
+.source-metadata dd {
+    margin: 0;
+}
+
+.technical-details {
+    border-top: 1px solid #d8ded8;
+    padding-top: 20px;
+}
+
+.technical-value {
+    overflow-wrap: anywhere;
+    font-family: ui-monospace, "Cascadia Mono", monospace;
+    font-size: 0.88rem;
 }
 
 .page-card {
@@ -133,4 +258,5 @@ main {
     .content {
         padding: 24px 16px;
     }
+
 }

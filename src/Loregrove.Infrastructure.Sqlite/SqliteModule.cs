@@ -1,3 +1,4 @@
+using Loregrove.Application.Library;
 using Loregrove.Application.Persistence;
 using Loregrove.Application.Processing;
 using Loregrove.Application.Sources;
@@ -30,6 +31,7 @@ public static class SqliteModule
         services.AddSingleton<IDatabaseIntegrityDiagnostics, SqliteIntegrityDiagnostics>();
         services.AddScoped<IProcessingJobRecovery, ProcessingJobRecovery>();
         services.AddScoped<ImportSourceService>();
+        services.AddScoped<LibraryQueryService>();
         services.AddSingleton<ILibraryInitializer, SqliteLibraryInitializer>();
         return services;
     }
