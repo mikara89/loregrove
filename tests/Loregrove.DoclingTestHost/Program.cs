@@ -16,6 +16,7 @@ Emit(Console.Error, 'E', options.StandardErrorCharacters);
 using var lifetime = new CancellationTokenSource();
 var listener = new TcpListener(IPAddress.Loopback, options.Port);
 listener.Start();
+using var stopListenerRegistration = lifetime.Token.Register(listener.Stop);
 var startedAt = DateTimeOffset.UtcNow;
 
 try
@@ -27,6 +28,12 @@ try
     }
 }
 catch (OperationCanceledException)
+{
+}
+catch (SocketException) when (lifetime.IsCancellationRequested)
+{
+}
+catch (ObjectDisposedException) when (lifetime.IsCancellationRequested)
 {
 }
 finally

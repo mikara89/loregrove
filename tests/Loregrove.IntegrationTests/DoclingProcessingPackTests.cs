@@ -172,9 +172,13 @@ public sealed class DoclingProcessingPackTests
     }
 
     [Fact]
-    public async Task ValidatorRejectsUnsupportedRuntimeWithoutInspectingPath()
+    public async Task ValidatorReportsCompletePackForUnsupportedRuntimeAsIncompatible()
     {
         using var pack = new TemporaryDirectory();
+        Directory.CreateDirectory(Path.Combine(pack.Path, "bin"));
+        Directory.CreateDirectory(Path.Combine(pack.Path, "runtime"));
+        await File.WriteAllTextAsync(Path.Combine(pack.Path, "bin", "pack-launcher.exe"), "test");
+        await File.WriteAllTextAsync(Path.Combine(pack.Path, "runtime", "python.dll"), "test");
         await WriteManifestAsync(pack.Path, CreateManifest() with { RuntimeIdentifier = "linux-x64" });
         var validator = new FileSystemDoclingPackValidator();
 

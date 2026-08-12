@@ -233,14 +233,6 @@ public sealed class FileSystemDoclingPackValidator : IDoclingPackValidator
             return Incompatible(location, manifest, "command-contract-unsupported");
         }
 
-        var currentRuntime = DoclingRuntimeIdentifier.Current;
-        if (currentRuntime is null ||
-            !DoclingRuntimeIdentifier.Supported.Contains(manifest.RuntimeIdentifier, StringComparer.Ordinal) ||
-            !string.Equals(manifest.RuntimeIdentifier, currentRuntime, StringComparison.Ordinal))
-        {
-            return Incompatible(location, manifest, "runtime-unsupported");
-        }
-
         if (!IsSaneVersion(manifest.PackVersion) ||
             !IsSaneVersion(manifest.PythonVersion) ||
             !IsSaneVersion(manifest.DoclingVersion) ||
@@ -262,6 +254,14 @@ public sealed class FileSystemDoclingPackValidator : IDoclingPackValidator
             {
                 return Invalid(location, "required-file-missing", manifest);
             }
+        }
+
+        var currentRuntime = DoclingRuntimeIdentifier.Current;
+        if (currentRuntime is null ||
+            !DoclingRuntimeIdentifier.Supported.Contains(manifest.RuntimeIdentifier, StringComparer.Ordinal) ||
+            !string.Equals(manifest.RuntimeIdentifier, currentRuntime, StringComparison.Ordinal))
+        {
+            return Incompatible(location, manifest, "runtime-unsupported");
         }
 
         return new(DoclingPackAvailability.Present, location, manifest, "pack-valid");
