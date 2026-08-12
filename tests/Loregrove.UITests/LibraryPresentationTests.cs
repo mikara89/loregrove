@@ -45,6 +45,9 @@ public sealed class LibraryPresentationTests
         Assert.Contains("1 failed", summary, StringComparison.Ordinal);
         Assert.Contains("1 cancelled", summary, StringComparison.Ordinal);
         Assert.Equal("Pending", UI.LibraryPresentation.ProcessingState(SourceProcessingState.PendingProcessing));
+        Assert.Equal("Parsing", UI.LibraryPresentation.ProcessingState(SourceProcessingState.Parsing));
+        Assert.Equal("Parsed", UI.LibraryPresentation.ProcessingState(SourceProcessingState.Parsed));
+        Assert.Equal("Parse failed", UI.LibraryPresentation.ProcessingState(SourceProcessingState.ParseFailed));
     }
 
     [Fact]

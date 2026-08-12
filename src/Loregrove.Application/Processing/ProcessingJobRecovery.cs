@@ -10,15 +10,38 @@ public sealed class ProcessingJobRecovery(
 {
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
-    public Task<int> RecoverInterruptedJobsAsync(CancellationToken cancellationToken)
+    public async Task<int> RecoverInterruptedJobsAsync(CancellationToken cancellationToken)
     {
         var recoveredAt = _timeProvider.GetUtcNow();
-        return dbContext.ProcessingJobs
+        await using var transaction = await dbContext.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        var parsingVersionIds = await dbContext.ProcessingJobs
+            .Where(job =>
+                job.State == ProcessingJobState.Processing &&
+                job.Stage == ProcessingStage.Parsing)
+            .Select(job => job.DocumentVersionId)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var recovered = await dbContext.ProcessingJobs
             .Where(job => job.State == ProcessingJobState.Processing)
             .ExecuteUpdateAsync(
                 setters => setters
                     .SetProperty(job => job.State, ProcessingJobState.Pending)
+                    .SetProperty(job => job.LastError, (string?)null)
                     .SetProperty(job => job.UpdatedAt, recoveredAt),
-                cancellationToken);
+                cancellationToken).ConfigureAwait(false);
+        if (parsingVersionIds.Count > 0)
+        {
+            await dbContext.SourceDocumentVersions
+                .Where(version => parsingVersionIds.Contains(version.Id))
+                .ExecuteUpdateAsync(
+                    setters => setters.SetProperty(
+                        version => version.ProcessingState,
+                        SourceProcessingState.PendingProcessing),
+                    cancellationToken).ConfigureAwait(false);
+        }
+
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        dbContext.ClearTrackedChanges();
+        return recovered;
     }
 }

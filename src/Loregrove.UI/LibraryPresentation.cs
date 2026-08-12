@@ -68,6 +68,9 @@ public static class LibraryPresentation
     {
         SourceProcessingState.Captured => "Captured",
         SourceProcessingState.PendingProcessing => "Pending",
+        SourceProcessingState.Parsing => "Parsing",
+        SourceProcessingState.Parsed => "Parsed",
+        SourceProcessingState.ParseFailed => "Parse failed",
         _ => "Unknown",
     };
 

@@ -79,7 +79,15 @@ public sealed class SourceDocumentVersion
 
     public SourceDocumentVersionId? PreviousVersionId { get; }
 
-    public SourceProcessingState ProcessingState { get; }
+    public SourceProcessingState ProcessingState { get; private set; }
+
+    public void MarkParsing() => ProcessingState = SourceProcessingState.Parsing;
+
+    public void MarkParsed() => ProcessingState = SourceProcessingState.Parsed;
+
+    public void MarkParseFailed() => ProcessingState = SourceProcessingState.ParseFailed;
+
+    public void ReturnToPendingProcessing() => ProcessingState = SourceProcessingState.PendingProcessing;
 
     private static bool IsSha256(string value) =>
         value.Length == 64 && value.All(character => character is >= '0' and <= '9' or >= 'a' and <= 'f');

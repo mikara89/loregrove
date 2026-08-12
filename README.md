@@ -3,9 +3,10 @@
 Loregrove is a local-first personal knowledge compiler.
 
 This repository contains the production architecture, desktop shell, and local evidence-library
-foundation. The shared Fluent Library now supports native multi-file selection, bounded durable
-imports, duplicate reporting, paged/filterable SQLite results, and source metadata details. Parsing,
-search, AI, Docling, and knowledge extraction are not implemented yet.
+foundation. The shared Fluent Library supports native multi-file selection, bounded durable imports,
+duplicate reporting, paged/filterable SQLite results, and source metadata details. Captured TXT and
+Markdown sources can now be parsed into immutable deterministic artifacts and structured Tier-2
+source anchors. Search, AI, Docling, and knowledge extraction are not implemented yet.
 
 ## Current targets
 
@@ -78,5 +79,6 @@ See [production boundaries](docs/architecture/production-boundaries.md),
 [local source capture](docs/architecture/source-capture.md),
 [SQLite persistence](docs/architecture/sqlite-persistence.md),
 [Library UI and source import](docs/architecture/library-ui-and-import.md),
+[parsing and source anchors](docs/architecture/parsing-and-source-anchors.md),
 [Windows validation debt](docs/platform/windows-validation.md), and
 [macOS validation debt](docs/platform/macos-validation.md) for the current implementation status.

@@ -17,6 +17,7 @@ public sealed class ProcessingJobConfiguration : IEntityTypeConfiguration<Proces
             .HasConversion(id => id.Value, value => new SourceDocumentVersionId(value))
             .IsRequired();
         builder.Property(job => job.State).HasConversion<int>().IsRequired();
+        builder.Property(job => job.Stage).HasConversion<int>().IsRequired();
         builder.Property(job => job.CreatedAt).IsRequired();
         builder.Property(job => job.UpdatedAt);
         builder.Property(job => job.AttemptCount).IsRequired();

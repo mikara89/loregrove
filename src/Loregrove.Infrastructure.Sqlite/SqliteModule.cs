@@ -1,4 +1,5 @@
 using Loregrove.Application.Library;
+using Loregrove.Application.Parsing;
 using Loregrove.Application.Persistence;
 using Loregrove.Application.Processing;
 using Loregrove.Application.Sources;
@@ -29,6 +30,7 @@ public static class SqliteModule
             serviceProvider.GetRequiredService<LoregroveDbContext>());
         services.AddSingleton<IDatabaseExceptionClassifier, SqliteDatabaseExceptionClassifier>();
         services.AddSingleton<IDatabaseIntegrityDiagnostics, SqliteIntegrityDiagnostics>();
+        services.AddSingleton<ISourceLocatorCodec, JsonSourceLocatorCodec>();
         services.AddScoped<IProcessingJobRecovery, ProcessingJobRecovery>();
         services.AddScoped<ImportSourceService>();
         services.AddScoped<LibraryQueryService>();

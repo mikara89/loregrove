@@ -24,7 +24,9 @@ flowchart LR
 
 `SourceDocuments` stores the logical source identity, display name, source kind, creation time, and
 typed current-version identifier. `SourceDocumentVersions` stores immutable capture metadata.
-`ProcessingJobs` stores the durable processing lifecycle, bounded diagnostic text, and retry count.
+`ProcessingJobs` stores the durable processing lifecycle, current stage, bounded diagnostic text, and
+retry count. `ParsedArtifacts` and `SourceAnchors` store immutable Tier-2 parser evidence; see
+[parsing and source anchors](parsing-and-source-anchors.md).
 
 The schema enforces:
 
@@ -33,7 +35,10 @@ The schema enforces:
 - `ProcessingJobs.DocumentVersionId` → `SourceDocumentVersions.Id` with restricted deletion;
 - unique `SourceDocumentVersions.ContentHash` for exact-byte deduplication;
 - unique `ProcessingJobs.DocumentVersionId` for one initial job per version;
-- indexes on version `DocumentId`, optional `PreviousVersionId`, and job `State`.
+- indexes on version `DocumentId`, optional `PreviousVersionId`, and job `State`;
+- unique `(DocumentVersionId, ParserFingerprint)` parsed artifacts and one filtered current artifact
+  per source version;
+- unique `(ParsedArtifactId, Ordinal)` anchors plus artifact/version evidence indexes.
 
 `SourceDocuments.CurrentVersionId` remains a required strongly typed value but is not an initial-schema
 foreign key. Enforcing both it and the required version-to-document relationship would create an
@@ -87,14 +92,16 @@ flowchart LR
     RECOVER --> READY[Library ready]
 ```
 
-Jobs left in `Processing` after process termination return to `Pending` at startup. Recovery updates
+Jobs left in `Processing` after process termination return to `Pending` at startup. For the Parsing
+stage, recovery also returns a source left in `Parsing` to `PendingProcessing`. Recovery updates
 `UpdatedAt` but does not increment `AttemptCount` and does not alter completed or failed jobs.
 
 ## Migrations and diagnostics
 
 Production initialization uses `Database.MigrateAsync`; it never uses `EnsureCreated`. The design-time
 factory lives with SQLite infrastructure, so migration generation does not launch MAUI. The initial
-migration is `20260811183241_InitialSqlitePersistence`.
+migration is `20260811183241_InitialSqlitePersistence`. Prompt 05 parsing evidence is added by
+`20260812110753_DurableParsedArtifactsAndSourceAnchors`.
 
 `IDatabaseIntegrityDiagnostics.QuickCheckAsync` exposes SQLite `PRAGMA quick_check` on demand. A full
 integrity scan is not run for routine operations.

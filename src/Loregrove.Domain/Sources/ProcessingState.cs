@@ -4,6 +4,9 @@ public enum SourceProcessingState
 {
     Captured = 0,
     PendingProcessing = 1,
+    Parsing = 2,
+    Parsed = 3,
+    ParseFailed = 4,
 }
 
 public enum ProcessingJobState
@@ -12,4 +15,10 @@ public enum ProcessingJobState
     Processing = 1,
     Completed = 2,
     Failed = 3,
+}
+
+public enum ProcessingStage
+{
+    Parsing = 0,
+    Chunking = 1,
 }
