@@ -345,6 +345,9 @@ internal sealed class DoclingProcessManager : IDoclingProcessManager, IDisposabl
 
     private async Task<DoclingReadyEndpoint> StartWithRestartAsync(CancellationToken cancellationToken)
     {
+        // Publish the shared startup task before any child can be launched so StopAsync can await it.
+        await Task.Yield();
+
         var location = await _packLocator.LocateAsync(cancellationToken);
         if (location is null)
         {
@@ -407,7 +410,6 @@ internal sealed class DoclingProcessManager : IDoclingProcessManager, IDisposabl
 
                 if (ownedProcess.ExpectedExit)
                 {
-                    await TerminateProcessAsync(ownedProcess);
                     cancellationToken.ThrowIfCancellationRequested();
                     throw new OperationCanceledException("Docling startup was stopped.");
                 }
@@ -436,7 +438,9 @@ internal sealed class DoclingProcessManager : IDoclingProcessManager, IDisposabl
                     _lifecycleGate.Release();
                 }
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            catch (OperationCanceledException) when (
+                cancellationToken.IsCancellationRequested ||
+                ownedProcess?.ExpectedExit == true)
             {
                 if (ownedProcess is not null)
                 {

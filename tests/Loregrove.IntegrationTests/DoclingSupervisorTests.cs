@@ -170,6 +170,56 @@ public sealed class DoclingSupervisorTests
     }
 
     [Fact]
+    public async Task StopBeforeChildOwnershipPublicationRetainsUnkillableGenerationThenRecovers()
+    {
+        var context = CreateManager(
+            new FakeProcessBehavior(
+                NeverReady: true,
+                IgnoreGracefulShutdown: true,
+                IgnoreKill: true),
+            new FakeProcessBehavior(),
+            gracefulTimeout: TimeSpan.FromMilliseconds(20),
+            forcedKillTimeout: TimeSpan.FromMilliseconds(20));
+        var manager = context.Manager;
+        Task? stopTask = null;
+        context.Harness.AfterProcessStarted = () =>
+        {
+            context.Harness.AfterProcessStarted = null;
+            stopTask = manager.StopAsync(CancellationToken.None);
+        };
+
+        var startupFailure = await Assert.ThrowsAsync<DoclingProcessException>(
+            () => manager.EnsureReadyAsync(CancellationToken.None));
+        var stopFailure = await Assert.ThrowsAsync<DoclingProcessException>(
+            () => stopTask!);
+
+        Assert.Equal(DoclingFailureCode.ShutdownFailed, startupFailure.Code);
+        Assert.Equal(DoclingFailureCode.ShutdownFailed, stopFailure.Code);
+        Assert.Equal(DoclingProcessState.Faulted, manager.GetSnapshot().State);
+        Assert.Equal(DoclingFailureCode.ShutdownFailed, manager.GetSnapshot().LastFailureCode);
+        Assert.Equal(1, context.Harness.LaunchCount);
+        Assert.False(context.Harness.Processes[0].HasExited);
+        Assert.Equal(
+            context.Harness.Processes[0].Id,
+            manager.GetSnapshot().ProcessId);
+
+        var blockedFailure = await Assert.ThrowsAsync<DoclingProcessException>(
+            () => manager.EnsureReadyAsync(CancellationToken.None));
+        Assert.Equal(DoclingFailureCode.ShutdownFailed, blockedFailure.Code);
+        Assert.Equal(1, context.Harness.LaunchCount);
+
+        context.Harness.Processes[0].Exit(-1);
+        var recovered = await manager.EnsureReadyAsync(CancellationToken.None);
+
+        Assert.Equal(2, context.Harness.LaunchCount);
+        Assert.Equal(recovered.GenerationId, manager.GetSnapshot().GenerationId);
+        Assert.Single(context.Harness.Processes, process => !process.HasExited);
+
+        await manager.StopAsync(CancellationToken.None);
+        await manager.DisposeAsync();
+    }
+
+    [Fact]
     public async Task FirstStartupFailureRecoversExactlyOnce()
     {
         var context = CreateManager(
@@ -638,6 +688,8 @@ public sealed class DoclingSupervisorTests
 
         internal List<DoclingProcessStartSpec> StartSpecs { get; } = [];
 
+        internal Action? AfterProcessStarted { get; set; }
+
         public int Allocate()
         {
             Interlocked.Increment(ref _portAllocationCount);
@@ -677,6 +729,8 @@ public sealed class DoclingSupervisorTests
             {
                 process.Exit(19);
             }
+
+            AfterProcessStarted?.Invoke();
 
             return process;
         }
