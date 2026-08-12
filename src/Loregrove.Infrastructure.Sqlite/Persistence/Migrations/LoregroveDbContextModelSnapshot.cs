@@ -40,6 +40,9 @@ namespace Loregrove.Infrastructure.Sqlite.Persistence.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("Completeness")
+                        .HasColumnType("INTEGER");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("TEXT");
 
@@ -64,6 +67,10 @@ namespace Loregrove.Infrastructure.Sqlite.Persistence.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("SafeDiagnosticCode")
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
                     b.Property<int>("SchemaVersion")
                         .HasColumnType("INTEGER");
 
@@ -71,6 +78,9 @@ namespace Loregrove.Infrastructure.Sqlite.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(64)
                         .HasColumnType("TEXT");
+
+                    b.Property<int>("WarningCount")
+                        .HasColumnType("INTEGER");
 
                     b.HasKey("Id");
 

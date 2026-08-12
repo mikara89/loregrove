@@ -1,5 +1,11 @@
 namespace Loregrove.Domain.Sources;
 
+public enum ParsedArtifactCompleteness
+{
+    Complete = 0,
+    Partial = 1,
+}
+
 /// <summary>
 /// Immutable metadata for one deterministic parser observation of an immutable source version.
 /// </summary>
@@ -18,7 +24,10 @@ public sealed class ParsedArtifact
         string artifactObjectKey,
         DateTimeOffset createdAt,
         int blockCount,
-        bool isCurrent)
+        bool isCurrent,
+        ParsedArtifactCompleteness completeness = ParsedArtifactCompleteness.Complete,
+        int warningCount = 0,
+        string? safeDiagnosticCode = null)
     {
         if (id.Value == Guid.Empty)
         {
@@ -39,6 +48,11 @@ public sealed class ParsedArtifact
         ValidateHash(artifactContentHash, nameof(artifactContentHash));
         ValidateRequired(artifactObjectKey, 256, nameof(artifactObjectKey));
         ArgumentOutOfRangeException.ThrowIfNegative(blockCount);
+        ArgumentOutOfRangeException.ThrowIfNegative(warningCount);
+        if (safeDiagnosticCode?.Length > 128)
+        {
+            throw new ArgumentException("The safe diagnostic code must not exceed 128 characters.", nameof(safeDiagnosticCode));
+        }
 
         Id = id;
         DocumentVersionId = documentVersionId;
@@ -53,6 +67,9 @@ public sealed class ParsedArtifact
         CreatedAt = createdAt;
         BlockCount = blockCount;
         IsCurrent = isCurrent;
+        Completeness = completeness;
+        WarningCount = warningCount;
+        SafeDiagnosticCode = safeDiagnosticCode;
     }
 
     public ParsedArtifactId Id { get; }
@@ -80,6 +97,12 @@ public sealed class ParsedArtifact
     public int BlockCount { get; }
 
     public bool IsCurrent { get; private set; }
+
+    public ParsedArtifactCompleteness Completeness { get; }
+
+    public int WarningCount { get; }
+
+    public string? SafeDiagnosticCode { get; }
 
     public void MarkNotCurrent() => IsCurrent = false;
 

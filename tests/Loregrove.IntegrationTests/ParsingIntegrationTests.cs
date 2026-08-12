@@ -132,6 +132,30 @@ public sealed class ParsingIntegrationTests
     }
 
     [Fact]
+    public async Task UnavailableParserDefersBeforeClaimWithoutEvidence()
+    {
+        using var directory = new TemporaryDirectory();
+        await using var services = BuildServices(directory.Path, new DeferredDocumentParser());
+        await InitializeAsync(services);
+        var versionId = await ImportAsync(services, "PDF", "source.pdf", "application/pdf", "%PDF-fake");
+
+        var result = await ParseAsync(services, versionId);
+
+        Assert.Equal(ParseSourceDisposition.Deferred, result.Disposition);
+        Assert.Equal(ParserAvailabilityReason.DoclingDisabled, result.DeferredReason);
+        await using var scope = services.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<LoregroveDbContext>();
+        Assert.Equal(0, await context.ParsedArtifacts.CountAsync());
+        Assert.Equal(0, await context.SourceAnchors.CountAsync());
+        Assert.Equal(SourceProcessingState.PendingProcessing,
+            (await context.SourceDocumentVersions.AsNoTracking().SingleAsync()).ProcessingState);
+        var job = await context.ProcessingJobs.AsNoTracking().SingleAsync();
+        Assert.Equal(ProcessingJobState.Pending, job.State);
+        Assert.Equal(ProcessingStage.Parsing, job.Stage);
+        Assert.Equal(0, job.AttemptCount);
+    }
+
+    [Fact]
     public async Task EightConcurrentRequestsCreateOneLogicalParseAndArtifactObject()
     {
         using var directory = new TemporaryDirectory();
@@ -611,6 +635,16 @@ public sealed class ParsingIntegrationTests
                 Descriptor,
                 [new ParsedBlock(0, ParsedBlockKind.PlainText, $"observed-{version}", new TextSourceLocator(1, 1), [])],
                 new Dictionary<string, string>()));
+    }
+
+    private sealed class DeferredDocumentParser : IDocumentParser, IDocumentParserAvailability
+    {
+        public ParserDescriptor Descriptor { get; } = ParserDescriptor.Create("deferred-docling", "1", 2, "disabled");
+        public bool CanParse(ParseSourceDescriptor source) => true;
+        public Task<ParserAvailability> GetAvailabilityAsync(ParseSourceDescriptor source, CancellationToken cancellationToken) =>
+            Task.FromResult(ParserAvailability.Deferred(ParserAvailabilityReason.DoclingDisabled));
+        public Task<ParsedDocumentResult> ParseAsync(Stream source, ParseSourceDescriptor descriptor, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("Parsing must not start while unavailable.");
     }
 
     private sealed class FailOnceParser() : VersionedTestParser("retry")

@@ -1,0 +1,5 @@
+{
+  "status": "failure",
+  "document": { "md_content": "", "json_content": {} },
+  "errors": [{ "message": "C:\\private\\source.pdf failed" }]
+}

@@ -7,19 +7,19 @@ This exception does not extend to AI runtimes: Loregrove never installs, downloa
 updates chat or embedding model processes. The implementation is deliberately named for Docling and
 does not provide a general Python, model, or arbitrary-process manager.
 
-Prompt 06 provides lifecycle and packaging infrastructure only. It does not register a Docling
-document parser, convert a document, or create `ParsedArtifact` or `SourceAnchor` records. Prompt 07
-may acquire a lease and map conversion output through the parsing/evidence boundary established by
-Prompt 05.
+Prompt 06 established lifecycle and packaging infrastructure. Prompt 07 registers the complex-format
+Docling parser, acquires its lease in ManagedLocal mode, and maps conversion output through the
+parsing/evidence boundary established by Prompt 05. Conversion behavior is specified in
+[Docling conversion and complex-format anchors](docling-conversion.md).
 
 ## Modes
 
 | Mode | Local reusable process behavior |
 |---|---|
-| `Disabled` | `EnsureReadyAsync` and `AcquireAsync` fail explicitly; no process starts. |
+| `Disabled` | Conversion availability defers before a parsing claim; no process starts. |
 | `ManagedLocal` | One private Processing Pack process starts on demand and is reused. |
-| `OneShot` | Reserved for a later prompt; this supervisor does not start a process. |
-| `Remote` | Reserved for a later prompt; this supervisor never starts a local process. |
+| `OneShot` | Conversion availability defers; this supervisor does not start a process. |
+| `Remote` | The converter calls the configured endpoint; this supervisor never starts a local process. |
 
 There is no fallback between modes. In particular, `Remote` and `Disabled` cannot silently become
 `ManagedLocal`.
@@ -191,7 +191,7 @@ Typed failure categories are `PackMissing`, `PackInvalid`, `UnsupportedRuntime`,
 `ProcessLaunchFailed`, `ReadinessTimeout`, `ProcessExited`, `ShutdownFailed`, and `PortUnavailable`,
 plus explicit mode failures. Application consumers never parse text to identify failure type.
 
-## Prompt 07 integration
+## Conversion integration
 
 ```mermaid
 sequenceDiagram
@@ -207,7 +207,8 @@ sequenceDiagram
     D-->>M: Ready
     M-->>App: Exclusive lease(endpoint, generation)
 
-    Note over App,D: Prompt 07 performs conversion
+    App->>D: async multipart submit, bounded poll, result
+    D-->>App: structured JSON + Markdown
 
     App->>M: Dispose lease
     M->>M: Start 3-minute idle timer
@@ -215,6 +216,6 @@ sequenceDiagram
     M-->>D: Owned process-tree kill only if bounded graceful stop fails
 ```
 
-Prompt 07 may connect complex source formats to the lease endpoint and map pinned Docling output into
-`ParsedDocumentResult`, `ParsedArtifact`, and `SourceAnchor`. It must preserve the immutable source
-and evidence rules and must not add remote URL fetching to local conversion.
+The complex-format parser connects the lease endpoint to pinned Docling output and maps it into
+`ParsedDocumentResult`, `ParsedArtifact`, and `SourceAnchor`. It preserves the immutable source and
+evidence rules and does not add remote URL fetching to local conversion.

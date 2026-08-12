@@ -22,7 +22,9 @@
 | Parser identity | Deterministic parser fingerprint over identity, version, schema, and configuration |
 | Parsed artifact files | Content-addressed JSON under `artifacts/parsed/<prefix>/<sha256>.json` |
 | AI runtimes | User-managed; Loregrove only calls configured providers |
-| Docling | Separate versioned Processing Pack; one loopback-only managed child and exclusive conversion lease |
+| Docling | Pinned async Serve v1 adapter; ManagedLocal pack or consented Remote endpoint; Disabled/OneShot defer |
+| Complex parsed evidence | Canonical Docling JSON + Markdown; XLSX also preserves deterministic Open XML structure |
+| Complex source locators | Typed PDF page/region, DOCX hierarchy, PPTX slide, image region, and XLSX sheet/range locators |
 | Knowledge truth model | Evidence separate from generated interpretation |
 | Clarification | Review Inbox + durable user resolutions |
 | Docs diagrams | Mermaid |

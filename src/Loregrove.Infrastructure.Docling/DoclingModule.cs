@@ -1,4 +1,5 @@
 using Loregrove.Application.Docling;
+using Loregrove.Application.Parsing;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Loregrove.Infrastructure.Docling;
@@ -8,7 +9,8 @@ public static class DoclingModule
     public static IServiceCollection AddLoregroveDocling(
         this IServiceCollection services,
         Action<DoclingConfiguration>? configure = null,
-        Action<DoclingSupervisorOptions>? configureSupervisor = null)
+        Action<DoclingSupervisorOptions>? configureSupervisor = null,
+        Action<DoclingConversionOptions>? configureConversion = null)
     {
         ArgumentNullException.ThrowIfNull(services);
 
@@ -17,9 +19,14 @@ public static class DoclingModule
         var supervisorOptions = new DoclingSupervisorOptions();
         configureSupervisor?.Invoke(supervisorOptions);
         supervisorOptions.Validate();
+        var conversionOptions = new DoclingConversionOptions();
+        configureConversion?.Invoke(conversionOptions);
+        conversionOptions.Validate();
 
         services.AddSingleton(configuration);
         services.AddSingleton(supervisorOptions);
+        services.AddSingleton(conversionOptions);
+        services.AddSingleton(DoclingConversionProfile.Conservative);
         services.AddSingleton<IDoclingPackLocator, FileSystemDoclingPackLocator>();
         services.AddSingleton<IDoclingPackValidator, FileSystemDoclingPackValidator>();
         services.AddSingleton<IDoclingPackInspector, DoclingPackInspector>();
@@ -32,6 +39,9 @@ public static class DoclingModule
         services.AddSingleton<IDoclingShutdownSignal>(services =>
             services.GetRequiredService<HttpDoclingControlClient>());
         services.AddSingleton<IDoclingProcessManager, DoclingProcessManager>();
+        services.AddSingleton<IDoclingConversionClient, DoclingV1ApiClient>();
+        services.AddSingleton<IXlsxStructureReader, OpenXmlXlsxStructureReader>();
+        services.AddSingleton<IDocumentParser, DoclingDocumentParser>();
         return services;
     }
 }

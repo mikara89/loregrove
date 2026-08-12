@@ -1,0 +1,11 @@
+{
+  "schema_name": "DoclingDocument",
+  "version": "1.0.0",
+  "body": { "self_ref": "#/body", "children": [{ "$ref": "#/texts/0" }, { "$ref": "#/texts/1" }] },
+  "furniture": { "self_ref": "#/furniture", "children": [] },
+  "groups": [], "tables": [], "pictures": [], "key_value_items": [],
+  "texts": [
+    { "self_ref": "#/texts/0", "label": "section_header", "level": 1, "text": "Design", "children": [], "prov": [] },
+    { "self_ref": "#/texts/1", "label": "paragraph", "text": "Structural provenance has no invented page.", "children": [], "prov": [] }
+  ]
+}
