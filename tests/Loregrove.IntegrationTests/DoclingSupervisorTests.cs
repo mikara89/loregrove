@@ -359,12 +359,10 @@ public sealed class DoclingSupervisorTests
             firstGeneration = lease.GenerationId;
         }
 
-        await WaitUntilAsync(
-            () => manager.GetSnapshot().State == DoclingProcessState.Stopping,
-            TimeSpan.FromSeconds(1));
+        await WaitUntilAsync(() => context.Harness.ShutdownRequests == 1);
+        Assert.Equal(DoclingProcessState.Stopping, manager.GetSnapshot().State);
         var replacementTask = manager.AcquireAsync(CancellationToken.None);
 
-        await WaitUntilAsync(() => context.Harness.ShutdownRequests == 1);
         Assert.False(replacementTask.IsCompleted);
         context.Harness.Processes[0].SignalGracefulShutdown();
         await using var replacement = await replacementTask;
