@@ -244,10 +244,10 @@ public sealed class DoclingSupervisorTests
     public async Task WorkArrivingDuringIdleStopWaitsThenStartsOneCleanReplacement()
     {
         var context = CreateManager(
-            new FakeProcessBehavior(GracefulShutdownDelay: TimeSpan.FromMilliseconds(80)),
+            new FakeProcessBehavior(ManualGracefulShutdown: true),
             new FakeProcessBehavior(),
             idleTimeout: TimeSpan.FromMilliseconds(30),
-            gracefulTimeout: TimeSpan.FromMilliseconds(200));
+            gracefulTimeout: TimeSpan.FromSeconds(5));
         await using var manager = context.Manager;
         long firstGeneration;
         await using (var lease = await manager.AcquireAsync(CancellationToken.None))
@@ -258,7 +258,12 @@ public sealed class DoclingSupervisorTests
         await WaitUntilAsync(
             () => manager.GetSnapshot().State == DoclingProcessState.Stopping,
             TimeSpan.FromSeconds(1));
-        await using var replacement = await manager.AcquireAsync(CancellationToken.None);
+        var replacementTask = manager.AcquireAsync(CancellationToken.None);
+
+        await WaitUntilAsync(() => context.Harness.ShutdownRequests == 1);
+        Assert.False(replacementTask.IsCompleted);
+        context.Harness.Processes[0].SignalGracefulShutdown();
+        await using var replacement = await replacementTask;
 
         Assert.NotEqual(firstGeneration, replacement.GenerationId);
         Assert.Equal(2, context.Harness.LaunchCount);
@@ -515,6 +520,7 @@ public sealed class DoclingSupervisorTests
         bool CrashImmediately = false,
         bool IgnoreGracefulShutdown = false,
         bool IgnoreKill = false,
+        bool ManualGracefulShutdown = false,
         TimeSpan? GracefulShutdownDelay = null);
 
     private sealed class StubPackLocator(DoclingPackLocation? location) : IDoclingPackLocator
@@ -643,6 +649,11 @@ public sealed class DoclingSupervisorTests
 
             if (!process.Behavior.IgnoreGracefulShutdown)
             {
+                if (process.Behavior.ManualGracefulShutdown)
+                {
+                    await process.WaitForGracefulShutdownSignalAsync(cancellationToken);
+                }
+
                 if (process.Behavior.GracefulShutdownDelay is { } delay)
                 {
                     await Task.Delay(delay, cancellationToken);
@@ -659,6 +670,8 @@ public sealed class DoclingSupervisorTests
     {
         private readonly DateTimeOffset _startedAt = DateTimeOffset.UtcNow;
         private readonly TaskCompletionSource<int> _exit = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _gracefulShutdown = new(
             TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly Action _onKill;
         private int _readySignaled;
@@ -700,5 +713,10 @@ public sealed class DoclingSupervisorTests
         internal void Exit(int exitCode) => _exit.TrySetResult(exitCode);
 
         internal void SignalReady() => Volatile.Write(ref _readySignaled, 1);
+
+        internal void SignalGracefulShutdown() => _gracefulShutdown.TrySetResult();
+
+        internal Task WaitForGracefulShutdownSignalAsync(CancellationToken cancellationToken) =>
+            _gracefulShutdown.Task.WaitAsync(cancellationToken);
     }
 }
