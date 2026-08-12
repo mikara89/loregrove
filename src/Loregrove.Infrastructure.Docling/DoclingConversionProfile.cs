@@ -34,7 +34,7 @@ internal sealed record DoclingConversionProfile(
         CodeEnrichmentEnabled: false,
         FormulaEnrichmentEnabled: false,
         ChartEnrichmentEnabled: false,
-        MapperVersion: "docling-document-v1",
+        MapperVersion: "docling-document-v2",
         WorkbookReaderVersion: "openxml-v1");
 
     internal string CanonicalValue => string.Join('\n',

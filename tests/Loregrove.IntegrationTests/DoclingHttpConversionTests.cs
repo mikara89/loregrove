@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -116,6 +117,33 @@ public sealed class DoclingHttpConversionTests
         Assert.Equal(ParserInfrastructureFailureCode.ApiIncompatible, incompatible.Code);
     }
 
+    [Fact]
+    public async Task ResultTimeoutIncludesResponseBodyDownload()
+    {
+        await using var server = await DoclingLoopbackServer.StartStalledResultAsync();
+        using var client = new DoclingV1ApiClient(new DoclingConversionOptions
+        {
+            SubmitTimeout = TimeSpan.FromSeconds(3),
+            PollRequestTimeout = TimeSpan.FromSeconds(3),
+            PollInterval = TimeSpan.FromMilliseconds(5),
+            OverallTimeout = TimeSpan.FromSeconds(5),
+            ResultTimeout = TimeSpan.FromMilliseconds(150),
+            MaximumResponseBytes = 1024 * 1024,
+        });
+        await using var source = new MemoryStream([1]);
+        var stopwatch = Stopwatch.StartNew();
+
+        var exception = await Assert.ThrowsAsync<ParserInfrastructureException>(() => client.ConvertAsync(
+            server.Endpoint,
+            Request(source, "stalled.pdf"),
+            null,
+            CancellationToken.None));
+
+        stopwatch.Stop();
+        Assert.Equal(ParserInfrastructureFailureCode.ConversionTimedOut, exception.Code);
+        Assert.True(stopwatch.Elapsed < TimeSpan.FromSeconds(2), $"Elapsed: {stopwatch.Elapsed}");
+    }
+
     private static DoclingV1ApiClient CreateClient() => new(new DoclingConversionOptions
     {
         SubmitTimeout = TimeSpan.FromSeconds(3),
@@ -160,14 +188,16 @@ public sealed class DoclingHttpConversionTests
         private readonly Task _runTask;
         private readonly string _result;
         private readonly Uri? _redirect;
+        private readonly bool _stallResultBody;
         private readonly List<byte> _uploadBytes = [];
         private int _pollCount;
 
-        private DoclingLoopbackServer(TcpListener listener, string result, Uri? redirect)
+        private DoclingLoopbackServer(TcpListener listener, string result, Uri? redirect, bool stallResultBody)
         {
             _listener = listener;
             _result = result;
             _redirect = redirect;
+            _stallResultBody = stallResultBody;
             var port = ((IPEndPoint)listener.LocalEndpoint).Port;
             Endpoint = new Uri($"http://127.0.0.1:{port}/");
             _runTask = RunAsync();
@@ -183,17 +213,24 @@ public sealed class DoclingHttpConversionTests
         internal int PollCount => Volatile.Read(ref _pollCount);
 
         internal static Task<DoclingLoopbackServer> StartAsync(string result, string? apiKey = null) =>
-            StartCoreAsync(result, redirect: null, apiKey);
+            StartCoreAsync(result, redirect: null, apiKey, stallResultBody: false);
+
+        internal static Task<DoclingLoopbackServer> StartStalledResultAsync() =>
+            StartCoreAsync(string.Empty, redirect: null, expectedApiKey: null, stallResultBody: true);
 
         internal static Task<DoclingLoopbackServer> StartRedirectAsync(Uri destination) =>
-            StartCoreAsync(string.Empty, destination, expectedApiKey: null);
+            StartCoreAsync(string.Empty, destination, expectedApiKey: null, stallResultBody: false);
 
-        private static Task<DoclingLoopbackServer> StartCoreAsync(string result, Uri? redirect, string? expectedApiKey)
+        private static Task<DoclingLoopbackServer> StartCoreAsync(
+            string result,
+            Uri? redirect,
+            string? expectedApiKey,
+            bool stallResultBody)
         {
             _ = expectedApiKey;
             var listener = new TcpListener(IPAddress.Loopback, 0);
             listener.Start();
-            return Task.FromResult(new DoclingLoopbackServer(listener, result, redirect));
+            return Task.FromResult(new DoclingLoopbackServer(listener, result, redirect, stallResultBody));
         }
 
         private async Task RunAsync()
@@ -254,6 +291,12 @@ public sealed class DoclingHttpConversionTests
             {
                 request.Headers.TryGetValue(DoclingV1ApiClient.ApiKeyHeaderName, out var apiKey);
                 ResultApiKey = apiKey;
+                if (_stallResultBody)
+                {
+                    await WriteStalledResponseAsync(stream, _lifetime.Token);
+                    return;
+                }
+
                 await WriteResponseAsync(stream, 200, _result);
                 return;
             }
@@ -363,6 +406,15 @@ public sealed class DoclingHttpConversionTests
             response.Append("\r\n");
             await stream.WriteAsync(Encoding.ASCII.GetBytes(response.ToString()));
             await stream.WriteAsync(bytes);
+        }
+
+        private static async Task WriteStalledResponseAsync(NetworkStream stream, CancellationToken cancellationToken)
+        {
+            const string headers = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 1024\r\nConnection: close\r\n\r\n";
+            await stream.WriteAsync(Encoding.ASCII.GetBytes(headers), cancellationToken);
+            await stream.WriteAsync("{"u8.ToArray(), cancellationToken);
+            await stream.FlushAsync(cancellationToken);
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
         }
 
         public async ValueTask DisposeAsync()

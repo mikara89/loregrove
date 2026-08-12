@@ -10,6 +10,9 @@ internal sealed record DoclingMappedDocument(
     IReadOnlyList<ParsedBlock> Blocks,
     string CanonicalStructuredJson);
 
+internal sealed class DoclingSchemaException(string message, Exception? innerException = null)
+    : Exception(message, innerException);
+
 internal sealed class DoclingDocumentMapper
 {
     private static readonly HashSet<string> VolatilePropertyNames = new(StringComparer.OrdinalIgnoreCase)
@@ -42,7 +45,7 @@ internal sealed class DoclingDocumentMapper
         if (root.ValueKind != JsonValueKind.Object ||
             !root.TryGetProperty("body", out var body) || body.ValueKind != JsonValueKind.Object)
         {
-            throw new DocumentParseException("The structured Docling document root is invalid.");
+            throw new DoclingSchemaException("The structured Docling document root is invalid.");
         }
 
         var items = BuildItemIndex(root);
@@ -50,19 +53,29 @@ internal sealed class DoclingDocumentMapper
         var blocks = new List<ParsedBlock>();
         var active = new HashSet<string>(StringComparer.Ordinal);
         var headingPath = new List<string>();
+        var slideSequence = 0;
         if (!body.TryGetProperty("children", out var bodyChildren) || bodyChildren.ValueKind != JsonValueKind.Array)
         {
-            throw new DocumentParseException("The structured Docling body has no reading-order children.");
+            throw new DoclingSchemaException("The structured Docling body has no reading-order children.");
         }
 
         foreach (var child in bodyChildren.EnumerateArray())
         {
-            Traverse(ReadReference(child), headingPath, items, pageDimensions, inputFormat, blocks, active);
+            Traverse(
+                ReadReference(child),
+                headingPath,
+                items,
+                pageDimensions,
+                inputFormat,
+                blocks,
+                active,
+                presentationContext: null,
+                ref slideSequence);
         }
 
         if (blocks.Count == 0 && items.Values.Any(IsUsableContent))
         {
-            throw new DocumentParseException("The Docling reading order did not expose usable evidence.");
+            throw new DoclingSchemaException("The Docling reading order did not expose usable evidence.");
         }
 
         return new DoclingMappedDocument(blocks, Canonicalize(root));
@@ -80,7 +93,7 @@ internal sealed class DoclingDocumentMapper
 
             if (collection.ValueKind != JsonValueKind.Array)
             {
-                throw new DocumentParseException($"Docling collection '{collectionName}' is invalid.");
+                throw new DoclingSchemaException($"Docling collection '{collectionName}' is invalid.");
             }
 
             foreach (var item in collection.EnumerateArray())
@@ -90,12 +103,12 @@ internal sealed class DoclingDocumentMapper
                     string.IsNullOrWhiteSpace(selfRef.GetString()) ||
                     !item.TryGetProperty("label", out var label) || label.ValueKind != JsonValueKind.String)
                 {
-                    throw new DocumentParseException("A Docling document item is missing its reference or label.");
+                    throw new DoclingSchemaException("A Docling document item is missing its reference or label.");
                 }
 
                 if (!result.TryAdd(selfRef.GetString()!, item.Clone()))
                 {
-                    throw new DocumentParseException("The Docling document contains duplicate item references.");
+                    throw new DoclingSchemaException("The Docling document contains duplicate item references.");
                 }
             }
         }
@@ -115,7 +128,7 @@ internal sealed class DoclingDocumentMapper
         {
             JsonValueKind.Array => pages.EnumerateArray(),
             JsonValueKind.Object => pages.EnumerateObject().Select(item => item.Value),
-            _ => throw new DocumentParseException("The Docling pages collection is invalid."),
+            _ => throw new DoclingSchemaException("The Docling pages collection is invalid."),
         };
         foreach (var page in values)
         {
@@ -125,7 +138,7 @@ internal sealed class DoclingDocumentMapper
                 !TryFiniteDouble(size, "width", out var width) || width <= 0 ||
                 !TryFiniteDouble(size, "height", out var height) || height <= 0)
             {
-                continue;
+                throw new DoclingSchemaException("A Docling page has invalid dimensions or identity.");
             }
 
             result[pageNumber] = (width, height);
@@ -141,16 +154,18 @@ internal sealed class DoclingDocumentMapper
         IReadOnlyDictionary<int, (double Width, double Height)> pageDimensions,
         string inputFormat,
         List<ParsedBlock> blocks,
-        HashSet<string> active)
+        HashSet<string> active,
+        PresentationContext? presentationContext,
+        ref int slideSequence)
     {
         if (!items.TryGetValue(reference, out var item))
         {
-            throw new DocumentParseException("The Docling reading order references an unknown item.");
+            throw new DoclingSchemaException("The Docling reading order references an unknown item.");
         }
 
         if (!active.Add(reference))
         {
-            throw new DocumentParseException("The Docling reading order contains a cycle.");
+            throw new DoclingSchemaException("The Docling reading order contains a cycle.");
         }
 
         try
@@ -162,6 +177,9 @@ internal sealed class DoclingDocumentMapper
             if (inputFormat == "pptx" && label == "slide")
             {
                 var slideTitle = FindSlideTitle(item, items);
+                _ = ReadProvenance(item, pageDimensions);
+                var slideNumber = ++slideSequence;
+                presentationContext = new PresentationContext(slideNumber, slideTitle);
                 if (slideTitle is not null)
                 {
                     childPath = [slideTitle];
@@ -197,7 +215,7 @@ internal sealed class DoclingDocumentMapper
                         ordinal,
                         MapKind(label),
                         normalized,
-                        CreateLocator(item, inputFormat, ordinal, blockPath, pageDimensions),
+                        CreateLocator(item, inputFormat, ordinal, blockPath, pageDimensions, presentationContext),
                         blockPath));
                 }
             }
@@ -206,12 +224,21 @@ internal sealed class DoclingDocumentMapper
             {
                 if (children.ValueKind != JsonValueKind.Array)
                 {
-                    throw new DocumentParseException("A Docling item has invalid children.");
+                    throw new DoclingSchemaException("A Docling item has invalid children.");
                 }
 
                 foreach (var child in children.EnumerateArray())
                 {
-                    Traverse(ReadReference(child), childPath, items, pageDimensions, inputFormat, blocks, active);
+                    Traverse(
+                        ReadReference(child),
+                        childPath,
+                        items,
+                        pageDimensions,
+                        inputFormat,
+                        blocks,
+                        active,
+                        presentationContext,
+                        ref slideSequence);
                 }
             }
         }
@@ -248,40 +275,35 @@ internal sealed class DoclingDocumentMapper
         string inputFormat,
         int ordinal,
         string[] headingPath,
-        IReadOnlyDictionary<int, (double Width, double Height)> pageDimensions)
+        IReadOnlyDictionary<int, (double Width, double Height)> pageDimensions,
+        PresentationContext? presentationContext)
     {
         var reference = RequiredString(item, "self_ref");
-        var provenance = ReadProvenance(item);
-        var page = provenance?.PageNumber;
-        pageDimensions.TryGetValue(page ?? 0, out var dimensions);
+        var provenance = ReadProvenance(item, pageDimensions);
+        var first = provenance.Count == 0 ? null : provenance[0];
         return inputFormat switch
         {
-            "pdf" when page is { } pageNumber => new PagedRegionSourceLocator(
-                pageNumber,
+            "pdf" when provenance.Count > 0 => new PagedRegionSourceLocator(
                 reference,
                 ordinal,
-                provenance?.BoundingBox,
-                provenance?.CharacterSpan,
-                dimensions.Width > 0 ? dimensions.Width : null,
-                dimensions.Height > 0 ? dimensions.Height : null),
+                provenance),
             "pptx" => new PresentationSourceLocator(
-                page ?? 1,
+                presentationContext?.SlideNumber ?? first?.PageNumber,
                 reference,
                 ordinal,
-                headingPath.Length > 0 ? headingPath[^1] : null,
-                provenance?.BoundingBox),
+                presentationContext?.SlideTitle,
+                regions: provenance),
             "png" or "jpeg" or "tiff" or "bmp" or "webp" => new ImageRegionSourceLocator(
                 reference,
                 ordinal,
-                provenance?.BoundingBox,
-                ToPixelDimension(dimensions.Width),
-                ToPixelDimension(dimensions.Height)),
+                imageWidth: ToPixelDimension(first?.PageWidth ?? 0),
+                imageHeight: ToPixelDimension(first?.PageHeight ?? 0),
+                regions: provenance),
             _ => new StructuredDocumentSourceLocator(
                 reference,
                 ordinal,
                 headingPath,
-                page,
-                provenance?.BoundingBox),
+                regions: provenance),
         };
     }
 
@@ -295,82 +317,115 @@ internal sealed class DoclingDocumentMapper
         var rounded = Math.Round(value, MidpointRounding.AwayFromZero);
         if (rounded < 1 || rounded > int.MaxValue)
         {
-            throw new DocumentParseException("Docling returned an invalid image dimension.");
+            throw new DoclingSchemaException("Docling returned an invalid image dimension.");
         }
 
         return checked((int)rounded);
     }
 
-    private static Provenance? ReadProvenance(JsonElement item)
+    private static List<SourceProvenanceRegion> ReadProvenance(
+        JsonElement item,
+        IReadOnlyDictionary<int, (double Width, double Height)> pageDimensions)
     {
-        if (!item.TryGetProperty("prov", out var provenance) || provenance.ValueKind != JsonValueKind.Array ||
-            provenance.GetArrayLength() == 0)
+        if (!item.TryGetProperty("prov", out var provenance))
         {
-            return null;
+            return [];
         }
 
-        var value = provenance[0];
-        if (value.ValueKind != JsonValueKind.Object || !TryInt32(value, "page_no", out var page) || page < 1)
+        if (provenance.ValueKind != JsonValueKind.Array)
         {
-            return null;
+            throw new DoclingSchemaException("Docling provenance must be an array.");
         }
 
-        SourceBoundingBox? box = null;
-        if (value.TryGetProperty("bbox", out var bbox) && bbox.ValueKind == JsonValueKind.Object &&
-            TryFiniteDouble(bbox, "l", out var left) && TryFiniteDouble(bbox, "t", out var top) &&
-            TryFiniteDouble(bbox, "r", out var right) && TryFiniteDouble(bbox, "b", out var bottom))
+        var regions = new List<SourceProvenanceRegion>(provenance.GetArrayLength());
+        foreach (var value in provenance.EnumerateArray())
         {
-            var origin = SourceCoordinateOrigin.TopLeft;
-            if (bbox.TryGetProperty("coord_origin", out var originValue))
+            if (value.ValueKind != JsonValueKind.Object ||
+                !TryInt32(value, "page_no", out var page) || page < 1)
             {
-                origin = originValue.ValueKind == JsonValueKind.String
-                    ? originValue.GetString()?.ToUpperInvariant() switch
-                    {
-                        "TOPLEFT" => SourceCoordinateOrigin.TopLeft,
-                        "BOTTOMLEFT" => SourceCoordinateOrigin.BottomLeft,
-                        _ => throw new DocumentParseException("Docling returned an unknown coordinate origin."),
-                    }
-                    : throw new DocumentParseException("Docling returned an invalid coordinate origin.");
+                throw new DoclingSchemaException("A Docling provenance region has no valid page number.");
             }
-            try
-            {
-                box = new SourceBoundingBox(left, top, right, bottom, origin);
-            }
-            catch (ArgumentException exception)
-            {
-                throw new DocumentParseException("Docling returned invalid provenance geometry.", exception);
-            }
-        }
 
-        SourceCharacterSpan? span = null;
-        if (value.TryGetProperty("charspan", out var charspan))
-        {
-            var start = 0;
-            var end = 0;
-            var valid = charspan.ValueKind == JsonValueKind.Array && charspan.GetArrayLength() == 2 &&
-                charspan[0].TryGetInt32(out start) && charspan[1].TryGetInt32(out end);
-            valid = valid || (charspan.ValueKind == JsonValueKind.Object &&
-                TryInt32(charspan, "start", out start) && TryInt32(charspan, "end", out end));
-            if (valid)
+            SourceBoundingBox? box = null;
+            if (value.TryGetProperty("bbox", out var bbox))
             {
+                if (bbox.ValueKind != JsonValueKind.Object ||
+                    !TryFiniteDouble(bbox, "l", out var left) ||
+                    !TryFiniteDouble(bbox, "t", out var top) ||
+                    !TryFiniteDouble(bbox, "r", out var right) ||
+                    !TryFiniteDouble(bbox, "b", out var bottom))
+                {
+                    throw new DoclingSchemaException("Docling returned an invalid provenance bounding box.");
+                }
+
+                var origin = SourceCoordinateOrigin.TopLeft;
+                if (bbox.TryGetProperty("coord_origin", out var originValue))
+                {
+                    origin = originValue.ValueKind == JsonValueKind.String
+                        ? originValue.GetString()?.ToUpperInvariant() switch
+                        {
+                            "TOPLEFT" => SourceCoordinateOrigin.TopLeft,
+                            "BOTTOMLEFT" => SourceCoordinateOrigin.BottomLeft,
+                            _ => throw new DoclingSchemaException("Docling returned an unknown coordinate origin."),
+                        }
+                        : throw new DoclingSchemaException("Docling returned an invalid coordinate origin.");
+                }
+
+                try
+                {
+                    box = new SourceBoundingBox(left, top, right, bottom, origin);
+                }
+                catch (ArgumentException exception)
+                {
+                    throw new DoclingSchemaException("Docling returned invalid provenance geometry.", exception);
+                }
+            }
+
+            SourceCharacterSpan? span = null;
+            if (value.TryGetProperty("charspan", out var charspan))
+            {
+                var start = 0;
+                var end = 0;
+                var valid = charspan.ValueKind == JsonValueKind.Array && charspan.GetArrayLength() == 2 &&
+                    charspan[0].TryGetInt32(out start) && charspan[1].TryGetInt32(out end);
+                valid = valid || (charspan.ValueKind == JsonValueKind.Object &&
+                    TryInt32(charspan, "start", out start) && TryInt32(charspan, "end", out end));
+                if (!valid)
+                {
+                    throw new DoclingSchemaException("Docling returned an invalid character-span shape.");
+                }
+
                 try
                 {
                     span = new SourceCharacterSpan(start, end);
                 }
                 catch (ArgumentException exception)
                 {
-                    throw new DocumentParseException("Docling returned an invalid character span.", exception);
+                    throw new DoclingSchemaException("Docling returned an invalid character span.", exception);
                 }
             }
+
+            pageDimensions.TryGetValue(page, out var dimensions);
+            regions.Add(new SourceProvenanceRegion(
+                page,
+                box,
+                span,
+                dimensions.Width > 0 ? dimensions.Width : null,
+                dimensions.Height > 0 ? dimensions.Height : null));
         }
 
-        return new Provenance(page, box, span);
+        return regions;
     }
 
     private static string? ReadItemText(JsonElement item, string label)
     {
-        if (item.TryGetProperty("text", out var text) && text.ValueKind == JsonValueKind.String)
+        if (item.TryGetProperty("text", out var text))
         {
+            if (text.ValueKind != JsonValueKind.String)
+            {
+                throw new DoclingSchemaException("A Docling item has an invalid text value.");
+            }
+
             return text.GetString();
         }
 
@@ -379,10 +434,15 @@ internal sealed class DoclingDocumentMapper
 
     private static string? ReadTableText(JsonElement item)
     {
-        if (!item.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Object ||
-            !data.TryGetProperty("table_cells", out var cells) || cells.ValueKind != JsonValueKind.Array)
+        if (!item.TryGetProperty("data", out var data))
         {
             return null;
+        }
+
+        if (data.ValueKind != JsonValueKind.Object ||
+            !data.TryGetProperty("table_cells", out var cells) || cells.ValueKind != JsonValueKind.Array)
+        {
+            throw new DoclingSchemaException("A Docling table has invalid cell data.");
         }
 
         var values = new SortedDictionary<(int Row, int Column), string>();
@@ -392,11 +452,13 @@ internal sealed class DoclingDocumentMapper
                 !TryInt32(cell, "start_row_offset_idx", out var row) ||
                 !TryInt32(cell, "start_col_offset_idx", out var column))
             {
-                continue;
+                throw new DoclingSchemaException("A Docling table cell has invalid coordinates.");
             }
 
-            var text = cell.TryGetProperty("text", out var textValue) && textValue.ValueKind == JsonValueKind.String
-                ? NormalizeText(textValue.GetString() ?? string.Empty)
+            var text = cell.TryGetProperty("text", out var textValue)
+                ? textValue.ValueKind == JsonValueKind.String
+                    ? NormalizeText(textValue.GetString() ?? string.Empty)
+                    : throw new DoclingSchemaException("A Docling table cell has invalid text.")
                 : string.Empty;
             values[(row, column)] = text;
         }
@@ -429,14 +491,29 @@ internal sealed class DoclingDocumentMapper
         return builder.ToString();
     }
 
-    private static bool IsFurniture(string label, JsonElement item) =>
-        label is "page_header" or "page_footer" ||
-        (item.TryGetProperty("content_layer", out var layer) &&
-         string.Equals(layer.GetString(), "furniture", StringComparison.OrdinalIgnoreCase));
+    private static bool IsFurniture(string label, JsonElement item)
+    {
+        if (label is "page_header" or "page_footer")
+        {
+            return true;
+        }
+
+        if (!item.TryGetProperty("content_layer", out var layer))
+        {
+            return false;
+        }
+
+        if (layer.ValueKind != JsonValueKind.String)
+        {
+            throw new DoclingSchemaException("A Docling item has an invalid content layer.");
+        }
+
+        return string.Equals(layer.GetString(), "furniture", StringComparison.OrdinalIgnoreCase);
+    }
 
     private static bool IsUsableContent(JsonElement item)
     {
-        var label = item.TryGetProperty("label", out var labelValue) ? labelValue.GetString() : null;
+        var label = RequiredString(item, "label");
         return label is not null && !IsFurniture(label, item) && !string.IsNullOrWhiteSpace(ReadItemText(item, label));
     }
 
@@ -459,14 +536,14 @@ internal sealed class DoclingDocumentMapper
             return reference.GetString()!;
         }
 
-        throw new DocumentParseException("A Docling child reference is invalid.");
+        throw new DoclingSchemaException("A Docling child reference is invalid.");
     }
 
     private static string RequiredString(JsonElement value, string name) =>
         value.TryGetProperty(name, out var property) && property.ValueKind == JsonValueKind.String &&
         !string.IsNullOrWhiteSpace(property.GetString())
             ? property.GetString()!
-            : throw new DocumentParseException($"A required Docling property '{name}' is missing.");
+            : throw new DoclingSchemaException($"A required Docling property '{name}' is missing.");
 
     private static bool TryInt32(JsonElement value, string name, out int result)
     {
@@ -540,12 +617,9 @@ internal sealed class DoclingDocumentMapper
                 writer.WriteNullValue();
                 break;
             default:
-                throw new DocumentParseException("The structured Docling JSON contains an unsupported token.");
+                throw new DoclingSchemaException("The structured Docling JSON contains an unsupported token.");
         }
     }
 
-    private sealed record Provenance(
-        int PageNumber,
-        SourceBoundingBox? BoundingBox,
-        SourceCharacterSpan? CharacterSpan);
+    private sealed record PresentationContext(int SlideNumber, string? SlideTitle);
 }

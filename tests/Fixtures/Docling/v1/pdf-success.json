@@ -9,7 +9,10 @@
   "groups": [],
   "pictures": [],
   "key_value_items": [],
-  "pages": { "1": { "page_no": 1, "size": { "width": 612.0, "height": 792.0 } } },
+  "pages": {
+    "1": { "page_no": 1, "size": { "width": 612.0, "height": 792.0 } },
+    "2": { "page_no": 2, "size": { "width": 620.0, "height": 800.0 } }
+  },
   "texts": [
     {
       "self_ref": "#/texts/0",
@@ -25,7 +28,7 @@
       "children": [],
       "prov": [
         { "page_no": 1, "bbox": { "l": 72.0, "t": 690.0, "r": 340.0, "b": 660.0, "coord_origin": "BOTTOMLEFT" }, "charspan": [13, 32] },
-        { "page_no": 1, "bbox": { "l": 72.0, "t": 650.0, "r": 220.0, "b": 630.0, "coord_origin": "BOTTOMLEFT" }, "charspan": [33, 40] }
+        { "page_no": 2, "bbox": { "l": 72.0, "t": 750.0, "r": 220.0, "b": 730.0, "coord_origin": "BOTTOMLEFT" }, "charspan": [33, 40] }
       ]
     }
   ],
@@ -34,7 +37,10 @@
       "self_ref": "#/tables/0",
       "label": "table",
       "children": [],
-      "prov": [{ "page_no": 1, "bbox": { "l": 72.0, "t": 620.0, "r": 420.0, "b": 500.0, "coord_origin": "BOTTOMLEFT" }, "charspan": [41, 60] }],
+      "prov": [
+        { "page_no": 1, "bbox": { "l": 72.0, "t": 620.0, "r": 420.0, "b": 500.0, "coord_origin": "BOTTOMLEFT" }, "charspan": [41, 60] },
+        { "page_no": 2, "bbox": { "l": 72.0, "t": 760.0, "r": 420.0, "b": 680.0, "coord_origin": "BOTTOMLEFT" }, "charspan": [61, 80] }
+      ],
       "data": {
         "table_cells": [
           { "start_row_offset_idx": 0, "start_col_offset_idx": 0, "text": "Layer" },

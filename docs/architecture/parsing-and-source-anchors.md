@@ -92,17 +92,20 @@ Locator types are:
 - `TextSourceLocator`: 1-based start/end lines and optional character offsets;
 - `MarkdownSourceLocator`: 1-based original AST source lines, block ordinal, and hierarchical heading
   path.
-- `PagedRegionSourceLocator`: PDF page, item reference, ordinal, and optional bounding box,
-  character span, and page dimensions;
+- `PagedRegionSourceLocator`: ordered PDF page regions, item reference, ordinal, and optional bounding
+  boxes, character spans, and per-page dimensions;
 - `StructuredDocumentSourceLocator`: DOCX/structured item reference, ordinal, hierarchy, and optional
-  page/region provenance;
-- `PresentationSourceLocator`: slide number/title context, item reference, ordinal, and optional region;
-- `ImageRegionSourceLocator`: OCR item reference, ordinal, optional region, and optional dimensions;
+  ordered page/region provenance;
+- `PresentationSourceLocator`: optional structural slide number/title context, item reference, ordinal,
+  and ordered regions;
+- `ImageRegionSourceLocator`: OCR item reference, ordinal, ordered regions, and optional dimensions;
 - `SpreadsheetSourceLocator`: sheet name/index/visibility, cell or range, optional table name, and ordinal.
 
 Persistence records `LocatorKind`, `LocatorSchemaVersion`, and deterministic
 `LocatorJson`. The SQLite-owned `ISourceLocatorCodec` implementation rejects unknown kinds, schemas,
 properties, and malformed payloads; public evidence reads return typed locators rather than JSON.
+Complex locators use schema 2 so all Docling provenance entries survive artifact and anchor
+persistence; text, Markdown, and spreadsheet locators retain their existing schemas.
 
 ## Parsed artifacts and anchors
 

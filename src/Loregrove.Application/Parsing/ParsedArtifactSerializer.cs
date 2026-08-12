@@ -143,35 +143,22 @@ public static class ParsedArtifactSerializer
                 writer.WriteEndArray();
                 break;
             case PagedRegionSourceLocator paged:
-                writer.WriteNumber("pageNumber", paged.PageNumber);
                 writer.WriteString("itemReference", paged.ItemReference);
                 writer.WriteNumber("documentOrdinal", paged.DocumentOrdinal);
-                WriteBoundingBox(writer, paged.BoundingBox);
-                if (paged.CharacterSpan is { } characterSpan)
-                {
-                    writer.WritePropertyName("characterSpan");
-                    writer.WriteStartObject();
-                    writer.WriteNumber("start", characterSpan.Start);
-                    writer.WriteNumber("end", characterSpan.End);
-                    writer.WriteEndObject();
-                }
-
-                WriteOptionalNumber(writer, "pageWidth", paged.PageWidth);
-                WriteOptionalNumber(writer, "pageHeight", paged.PageHeight);
+                WriteRegions(writer, paged.Regions);
                 break;
             case StructuredDocumentSourceLocator structured:
                 writer.WriteString("itemReference", structured.ItemReference);
                 writer.WriteNumber("documentOrdinal", structured.DocumentOrdinal);
                 WriteHeadingPath(writer, structured.HeadingPath);
-                if (structured.PageNumber is { } structuredPage)
-                {
-                    writer.WriteNumber("pageNumber", structuredPage);
-                }
-
-                WriteBoundingBox(writer, structured.BoundingBox);
+                WriteRegions(writer, structured.Regions);
                 break;
             case PresentationSourceLocator presentation:
-                writer.WriteNumber("slideNumber", presentation.SlideNumber);
+                if (presentation.SlideNumber is { } slideNumber)
+                {
+                    writer.WriteNumber("slideNumber", slideNumber);
+                }
+
                 writer.WriteString("itemReference", presentation.ItemReference);
                 writer.WriteNumber("slideOrdinal", presentation.SlideOrdinal);
                 if (presentation.SlideTitle is not null)
@@ -179,12 +166,11 @@ public static class ParsedArtifactSerializer
                     writer.WriteString("slideTitle", presentation.SlideTitle);
                 }
 
-                WriteBoundingBox(writer, presentation.BoundingBox);
+                WriteRegions(writer, presentation.Regions);
                 break;
             case ImageRegionSourceLocator image:
                 writer.WriteString("itemReference", image.ItemReference);
                 writer.WriteNumber("regionOrdinal", image.RegionOrdinal);
-                WriteBoundingBox(writer, image.BoundingBox);
                 if (image.ImageWidth is { } imageWidth)
                 {
                     writer.WriteNumber("imageWidth", imageWidth);
@@ -195,6 +181,7 @@ public static class ParsedArtifactSerializer
                     writer.WriteNumber("imageHeight", imageHeight);
                 }
 
+                WriteRegions(writer, image.Regions);
                 break;
             case SpreadsheetSourceLocator spreadsheet:
                 writer.WriteString("sheetName", spreadsheet.SheetName);
@@ -240,6 +227,32 @@ public static class ParsedArtifactSerializer
         writer.WriteNumber("bottom", boundingBox.Bottom);
         writer.WriteString("origin", boundingBox.Origin.ToString());
         writer.WriteEndObject();
+    }
+
+    private static void WriteRegions(Utf8JsonWriter writer, IReadOnlyList<SourceProvenanceRegion> regions)
+    {
+        writer.WritePropertyName("regions");
+        writer.WriteStartArray();
+        foreach (var region in regions)
+        {
+            writer.WriteStartObject();
+            writer.WriteNumber("pageNumber", region.PageNumber);
+            WriteBoundingBox(writer, region.BoundingBox);
+            if (region.CharacterSpan is { } characterSpan)
+            {
+                writer.WritePropertyName("characterSpan");
+                writer.WriteStartObject();
+                writer.WriteNumber("start", characterSpan.Start);
+                writer.WriteNumber("end", characterSpan.End);
+                writer.WriteEndObject();
+            }
+
+            WriteOptionalNumber(writer, "pageWidth", region.PageWidth);
+            WriteOptionalNumber(writer, "pageHeight", region.PageHeight);
+            writer.WriteEndObject();
+        }
+
+        writer.WriteEndArray();
     }
 
     private static void WriteOptionalNumber(Utf8JsonWriter writer, string name, double? value)

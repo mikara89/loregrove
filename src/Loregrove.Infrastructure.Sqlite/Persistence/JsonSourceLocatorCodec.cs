@@ -43,32 +43,19 @@ public sealed class JsonSourceLocatorCodec : ISourceLocatorCodec
 
                     writer.WriteEndArray();
                     break;
-                case PagedRegionSourceLocator paged when paged.SchemaVersion == 1:
-                    writer.WriteNumber("pageNumber", paged.PageNumber);
+                case PagedRegionSourceLocator paged when paged.SchemaVersion == 2:
                     writer.WriteString("itemReference", paged.ItemReference);
                     writer.WriteNumber("documentOrdinal", paged.DocumentOrdinal);
-                    WriteBoundingBox(writer, paged.BoundingBox);
-                    if (paged.CharacterSpan is { } span)
-                    {
-                        writer.WritePropertyName("characterSpan");
-                        writer.WriteStartObject();
-                        writer.WriteNumber("start", span.Start);
-                        writer.WriteNumber("end", span.End);
-                        writer.WriteEndObject();
-                    }
-
-                    WriteOptionalDouble(writer, "pageWidth", paged.PageWidth);
-                    WriteOptionalDouble(writer, "pageHeight", paged.PageHeight);
+                    WriteRegions(writer, paged.Regions);
                     break;
-                case StructuredDocumentSourceLocator structured when structured.SchemaVersion == 1:
+                case StructuredDocumentSourceLocator structured when structured.SchemaVersion == 2:
                     writer.WriteString("itemReference", structured.ItemReference);
                     writer.WriteNumber("documentOrdinal", structured.DocumentOrdinal);
                     WriteStringArray(writer, "headingPath", structured.HeadingPath);
-                    WriteOptionalInt32(writer, "pageNumber", structured.PageNumber);
-                    WriteBoundingBox(writer, structured.BoundingBox);
+                    WriteRegions(writer, structured.Regions);
                     break;
-                case PresentationSourceLocator presentation when presentation.SchemaVersion == 1:
-                    writer.WriteNumber("slideNumber", presentation.SlideNumber);
+                case PresentationSourceLocator presentation when presentation.SchemaVersion == 2:
+                    WriteOptionalInt32(writer, "slideNumber", presentation.SlideNumber);
                     writer.WriteString("itemReference", presentation.ItemReference);
                     writer.WriteNumber("slideOrdinal", presentation.SlideOrdinal);
                     if (presentation.SlideTitle is not null)
@@ -76,14 +63,14 @@ public sealed class JsonSourceLocatorCodec : ISourceLocatorCodec
                         writer.WriteString("slideTitle", presentation.SlideTitle);
                     }
 
-                    WriteBoundingBox(writer, presentation.BoundingBox);
+                    WriteRegions(writer, presentation.Regions);
                     break;
-                case ImageRegionSourceLocator image when image.SchemaVersion == 1:
+                case ImageRegionSourceLocator image when image.SchemaVersion == 2:
                     writer.WriteString("itemReference", image.ItemReference);
                     writer.WriteNumber("regionOrdinal", image.RegionOrdinal);
-                    WriteBoundingBox(writer, image.BoundingBox);
                     WriteOptionalInt32(writer, "imageWidth", image.ImageWidth);
                     WriteOptionalInt32(writer, "imageHeight", image.ImageHeight);
+                    WriteRegions(writer, image.Regions);
                     break;
                 case SpreadsheetSourceLocator spreadsheet when spreadsheet.SchemaVersion == 1:
                     writer.WriteString("sheetName", spreadsheet.SheetName);
@@ -107,11 +94,6 @@ public sealed class JsonSourceLocatorCodec : ISourceLocatorCodec
 
     public SourceLocator Deserialize(SourceLocatorKind kind, int schemaVersion, string value)
     {
-        if (schemaVersion != 1)
-        {
-            throw new InvalidDataException("The source locator schema is not supported.");
-        }
-
         ArgumentException.ThrowIfNullOrWhiteSpace(value);
         try
         {
@@ -122,15 +104,15 @@ public sealed class JsonSourceLocatorCodec : ISourceLocatorCodec
                 throw new InvalidDataException("The source locator payload must be an object.");
             }
 
-            return kind switch
+            return (kind, schemaVersion) switch
             {
-                SourceLocatorKind.Text => ReadText(root),
-                SourceLocatorKind.Markdown => ReadMarkdown(root),
-                SourceLocatorKind.PagedRegion => ReadPagedRegion(root),
-                SourceLocatorKind.StructuredDocument => ReadStructuredDocument(root),
-                SourceLocatorKind.Presentation => ReadPresentation(root),
-                SourceLocatorKind.ImageRegion => ReadImageRegion(root),
-                SourceLocatorKind.Spreadsheet => ReadSpreadsheet(root),
+                (SourceLocatorKind.Text, 1) => ReadText(root),
+                (SourceLocatorKind.Markdown, 1) => ReadMarkdown(root),
+                (SourceLocatorKind.PagedRegion, 2) => ReadPagedRegion(root),
+                (SourceLocatorKind.StructuredDocument, 2) => ReadStructuredDocument(root),
+                (SourceLocatorKind.Presentation, 2) => ReadPresentation(root),
+                (SourceLocatorKind.ImageRegion, 2) => ReadImageRegion(root),
+                (SourceLocatorKind.Spreadsheet, 1) => ReadSpreadsheet(root),
                 _ => throw new InvalidDataException("The source locator kind is not supported."),
             };
         }
@@ -173,48 +155,44 @@ public sealed class JsonSourceLocatorCodec : ISourceLocatorCodec
 
     private static PagedRegionSourceLocator ReadPagedRegion(JsonElement root)
     {
-        EnsureOnlyProperties(root, "pageNumber", "itemReference", "documentOrdinal", "boundingBox", "characterSpan", "pageWidth", "pageHeight");
+        EnsureOnlyProperties(root, "itemReference", "documentOrdinal", "regions");
         return new PagedRegionSourceLocator(
-            RequiredInt32(root, "pageNumber"),
             RequiredString(root, "itemReference"),
             RequiredInt32(root, "documentOrdinal"),
-            ReadBoundingBox(root),
-            ReadCharacterSpan(root),
-            OptionalDouble(root, "pageWidth"),
-            OptionalDouble(root, "pageHeight"));
+            ReadRegions(root));
     }
 
     private static StructuredDocumentSourceLocator ReadStructuredDocument(JsonElement root)
     {
-        EnsureOnlyProperties(root, "itemReference", "documentOrdinal", "headingPath", "pageNumber", "boundingBox");
+        EnsureOnlyProperties(root, "itemReference", "documentOrdinal", "headingPath", "regions");
         return new StructuredDocumentSourceLocator(
             RequiredString(root, "itemReference"),
             RequiredInt32(root, "documentOrdinal"),
             RequiredStringArray(root, "headingPath"),
-            OptionalInt32(root, "pageNumber"),
-            ReadBoundingBox(root));
+            regions: ReadRegions(root));
     }
 
     private static PresentationSourceLocator ReadPresentation(JsonElement root)
     {
-        EnsureOnlyProperties(root, "slideNumber", "itemReference", "slideOrdinal", "slideTitle", "boundingBox");
+        EnsureOnlyProperties(root, "slideNumber", "itemReference", "slideOrdinal", "slideTitle", "regions");
         return new PresentationSourceLocator(
-            RequiredInt32(root, "slideNumber"),
+            OptionalInt32(root, "slideNumber"),
             RequiredString(root, "itemReference"),
             RequiredInt32(root, "slideOrdinal"),
             OptionalString(root, "slideTitle"),
-            ReadBoundingBox(root));
+            regions: ReadRegions(root));
     }
 
     private static ImageRegionSourceLocator ReadImageRegion(JsonElement root)
     {
-        EnsureOnlyProperties(root, "itemReference", "regionOrdinal", "boundingBox", "imageWidth", "imageHeight");
+        EnsureOnlyProperties(root, "itemReference", "regionOrdinal", "imageWidth", "imageHeight", "regions");
         return new ImageRegionSourceLocator(
             RequiredString(root, "itemReference"),
             RequiredInt32(root, "regionOrdinal"),
-            ReadBoundingBox(root),
-            OptionalInt32(root, "imageWidth"),
-            OptionalInt32(root, "imageHeight"));
+            boundingBox: null,
+            imageWidth: OptionalInt32(root, "imageWidth"),
+            imageHeight: OptionalInt32(root, "imageHeight"),
+            regions: ReadRegions(root));
     }
 
     private static SpreadsheetSourceLocator ReadSpreadsheet(JsonElement root)
@@ -321,6 +299,30 @@ public sealed class JsonSourceLocatorCodec : ISourceLocatorCodec
         return new SourceCharacterSpan(RequiredInt32(value, "start"), RequiredInt32(value, "end"));
     }
 
+    private static SourceProvenanceRegion[] ReadRegions(JsonElement root)
+    {
+        if (!root.TryGetProperty("regions", out var value) || value.ValueKind != JsonValueKind.Array)
+        {
+            throw new InvalidDataException("The source locator regions are required.");
+        }
+
+        return value.EnumerateArray().Select(region =>
+        {
+            if (region.ValueKind != JsonValueKind.Object)
+            {
+                throw new InvalidDataException("A source locator region must be an object.");
+            }
+
+            EnsureOnlyProperties(region, "pageNumber", "boundingBox", "characterSpan", "pageWidth", "pageHeight");
+            return new SourceProvenanceRegion(
+                RequiredInt32(region, "pageNumber"),
+                ReadBoundingBox(region),
+                ReadCharacterSpan(region),
+                OptionalDouble(region, "pageWidth"),
+                OptionalDouble(region, "pageHeight"));
+        }).ToArray();
+    }
+
     private static double RequiredDouble(JsonElement root, string name) =>
         root.TryGetProperty(name, out var value) && value.TryGetDouble(out var result) && double.IsFinite(result)
             ? result
@@ -353,6 +355,32 @@ public sealed class JsonSourceLocatorCodec : ISourceLocatorCodec
         writer.WriteNumber("bottom", box.Bottom);
         writer.WriteString("origin", box.Origin.ToString());
         writer.WriteEndObject();
+    }
+
+    private static void WriteRegions(Utf8JsonWriter writer, IReadOnlyList<SourceProvenanceRegion> regions)
+    {
+        writer.WritePropertyName("regions");
+        writer.WriteStartArray();
+        foreach (var region in regions)
+        {
+            writer.WriteStartObject();
+            writer.WriteNumber("pageNumber", region.PageNumber);
+            WriteBoundingBox(writer, region.BoundingBox);
+            if (region.CharacterSpan is { } span)
+            {
+                writer.WritePropertyName("characterSpan");
+                writer.WriteStartObject();
+                writer.WriteNumber("start", span.Start);
+                writer.WriteNumber("end", span.End);
+                writer.WriteEndObject();
+            }
+
+            WriteOptionalDouble(writer, "pageWidth", region.PageWidth);
+            WriteOptionalDouble(writer, "pageHeight", region.PageHeight);
+            writer.WriteEndObject();
+        }
+
+        writer.WriteEndArray();
     }
 
     private static void WriteOptionalInt32(Utf8JsonWriter writer, string name, int? value)

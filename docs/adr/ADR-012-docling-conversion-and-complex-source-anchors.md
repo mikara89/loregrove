@@ -29,13 +29,17 @@ request may be resubmitted once only after its exact lease generation becomes in
 
 The schema-2 artifact preserves canonical structured Docling JSON and normalized Markdown. XLSX adds
 a deterministic read-only Open XML structural representation. Parsed blocks carry strict typed
-locators for paged regions, structured documents, presentations, images, and spreadsheets. Upstream
+locators for paged regions, structured documents, presentations, images, and spreadsheets. Complex
+locator schema 2 preserves every ordered upstream provenance region; presentation locators obtain
+slide identity from structural slide-group context rather than fabricating slide 1. Upstream
 volatile execution data and machine paths are removed, and raw errors and secrets are never
 persisted.
 
-Partial conversion with usable evidence commits as an explicitly partial artifact. Document failure
-or no usable evidence creates no evidence. Infrastructure failure consumes the already-acquired
-attempt but restores the job to retryable Pending/Parsing. Availability failures consume no attempt.
+Partial conversion with usable evidence commits as an explicitly partial artifact. Explicit
+conversion failure or no usable evidence creates no evidence. Malformed or structurally incompatible
+Docling output is an infrastructure failure, consumes the already-acquired attempt, and restores the
+job to retryable Pending/Parsing. Availability failures consume no attempt. Per-operation HTTP
+timeouts cover headers, body download, and JSON parsing.
 
 ## Consequences
 

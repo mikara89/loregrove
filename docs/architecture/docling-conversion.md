@@ -32,7 +32,8 @@ The adapter centralizes the pinned asynchronous API contract:
 3. bounded `GET /v1/result/{task_id}`;
 4. mapping of `success`, `partial_success`, and document `failure` without parsing human messages.
 
-Submission, poll, result, and overall timeouts are separate. Responses are streamed into a bounded
+Submission, poll, result, and overall timeouts are separate. Each operation timeout covers sending,
+response headers, bounded body download, and JSON parsing. Responses are streamed into a bounded
 buffer, with a 128 MiB production default. Malformed or incompatible responses, oversize payloads,
 timeouts, transport failures, and managed runtime exits are typed infrastructure failures. A
 managed conversion is resubmitted at most once and only when its acquired generation is proven
@@ -70,17 +71,21 @@ checks. The mapper retains headings, paragraphs, list items, code, tables, formu
 OCR text, and ignores headers, footers, and furniture. It does not infer facts, create image
 descriptions, evaluate formulas, or fetch remote content.
 
-Typed schema-1 locator payloads preserve only source semantics genuinely available for each format:
+Typed schema-2 complex locator payloads preserve every upstream provenance region and only source
+semantics genuinely available for each format (spreadsheet locators remain schema 1):
 
-- PDF: page, item reference, block ordinal, optional finite bounding box and character span, and
-  optional page dimensions;
-- DOCX: item reference, ordinal, heading path, and optional upstream page/region provenance;
-- PPTX: slide number, slide title context, item reference, ordinal, and optional region;
-- images: item reference, ordinal, optional OCR region, and optional pixel dimensions;
+- PDF: ordered pages/regions, item reference, block ordinal, optional finite bounding boxes and
+  character spans, and optional per-page dimensions;
+- DOCX: item reference, ordinal, heading path, and ordered upstream page/region provenance;
+- PPTX: structural slide-group number/title context, item reference, ordinal, and ordered regions;
+  when neither group context nor provenance supplies a number, the slide number remains unknown;
+- images: item reference, ordinal, ordered OCR regions, and optional pixel dimensions;
 - XLSX: sheet name/index/visibility, cell or range, optional table name, and ordinal.
 
 Locator JSON is strict: unknown kinds, schema versions, properties, invalid ranges, non-finite
-geometry, and invalid coordinate systems are rejected.
+geometry, and invalid coordinate systems are rejected. Structurally incompatible Docling JSON is
+an API-infrastructure incompatibility and returns a claimed job to retryable Pending/Parsing; an
+explicit upstream conversion failure remains a non-retryable document parse failure.
 
 ## XLSX structural preservation
 
@@ -94,9 +99,9 @@ locators. Hidden sheets are retained as source evidence.
 
 Versioned Docling v1 fixtures cover every supported format, partial/failure responses, provenance,
 OCR, tables, and Unicode. Integration tests cover real loopback multipart/poll/result traffic,
-redirect and credential containment, managed generation loss, cancellation, deterministic replay,
-large structured output, a moderately large workbook, migrations, transactions, and concurrency
-semantics.
+stalled response bodies, redirect and credential containment, managed generation loss, cancellation,
+deterministic replay, large structured output, a moderately large workbook, migrations, transactions,
+and concurrency semantics.
 
 `DoclingRealProcessTests.OptionalRealDoclingSmokeIsExplicitlyReported` is the real-pack gate. It is
 not executed unless `LOREGROVE_DOCLING_SMOKE=1` and `LOREGROVE_DOCLING_PACK` identifies a compatible

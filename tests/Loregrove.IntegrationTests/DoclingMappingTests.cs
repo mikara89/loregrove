@@ -22,6 +22,13 @@ public sealed class DoclingMappingTests
         { "xlsx-success.json", "xlsx", typeof(StructuredDocumentSourceLocator), 1 },
     };
 
+    public static TheoryData<string> StructurallyIncompatibleDocuments => new()
+    {
+        { "{\"schema_name\":\"DoclingDocument\",\"texts\":[]}" },
+        { "{\"schema_name\":\"DoclingDocument\",\"body\":{\"children\":[{\"$ref\":7}]},\"texts\":[]}" },
+        { "{\"schema_name\":\"DoclingDocument\",\"body\":{\"children\":[{\"$ref\":\"#/texts/0\"}]},\"texts\":[{\"self_ref\":\"#/texts/0\",\"label\":\"paragraph\",\"text\":\"Evidence\",\"prov\":[{\"page_no\":1,\"bbox\":{\"l\":1,\"t\":2,\"r\":3,\"b\":4,\"coord_origin\":\"MIDDLE\"}}]}]}" },
+    };
+
     [Theory]
     [MemberData(nameof(FormatFixtures))]
     public void MapsVersionedFormatFixture(
@@ -59,8 +66,15 @@ public sealed class DoclingMappingTests
         Assert.Equal(new SourceCharacterSpan(0, 12), locator.CharacterSpan);
 
         Assert.Equal(["Architecture"], mapped.Blocks[1].HeadingPath);
+        var paragraphLocator = Assert.IsType<PagedRegionSourceLocator>(mapped.Blocks[1].Locator);
+        Assert.Equal([1, 2], paragraphLocator.Regions.Select(region => region.PageNumber));
+        Assert.Equal(620, paragraphLocator.Regions[1].PageWidth);
+        Assert.Equal(800, paragraphLocator.Regions[1].PageHeight);
         Assert.Equal(ParsedBlockKind.Table, mapped.Blocks[2].Kind);
         Assert.Contains("Layer\tTrust", mapped.Blocks[2].Text, StringComparison.Ordinal);
+        var tableLocator = Assert.IsType<PagedRegionSourceLocator>(mapped.Blocks[2].Locator);
+        Assert.Equal([1, 2], tableLocator.Regions.Select(region => region.PageNumber));
+        Assert.Equal(new SourceCharacterSpan(61, 80), tableLocator.Regions[1].CharacterSpan);
     }
 
     [Fact]
@@ -69,7 +83,7 @@ public sealed class DoclingMappingTests
         var malformed = ReadFixture("pdf-success.json")
             .Replace("BOTTOMLEFT", "MIDDLE", StringComparison.Ordinal);
 
-        Assert.Throws<DocumentParseException>(() => DoclingDocumentMapper.Map(malformed, "pdf"));
+        Assert.Throws<DoclingSchemaException>(() => DoclingDocumentMapper.Map(malformed, "pdf"));
     }
 
     [Fact]
@@ -90,12 +104,33 @@ public sealed class DoclingMappingTests
         Assert.Equal([1, 1, 2], slides.Select(block => ((PresentationSourceLocator)block.Locator).SlideNumber));
         Assert.Equal("First slide", ((PresentationSourceLocator)slides[0].Locator).SlideTitle);
         Assert.Equal("First slide", ((PresentationSourceLocator)slides[1].Locator).SlideTitle);
+        var secondSlide = Assert.IsType<PresentationSourceLocator>(slides[2].Locator);
+        Assert.Equal(2, secondSlide.SlideNumber);
+        Assert.Empty(secondSlide.Regions);
 
         var image = DoclingDocumentMapper.Map(ReadFixture("image-success.json"), "png").Blocks.Single();
         var imageLocator = Assert.IsType<ImageRegionSourceLocator>(image.Locator);
         Assert.Equal("OCR evidence", image.Text);
         Assert.Equal(800, imageLocator.ImageWidth);
         Assert.Equal(600, imageLocator.ImageHeight);
+    }
+
+    [Fact]
+    public void PresentationWithoutSlideContextKeepsSlideNumberUnknown()
+    {
+        const string document = """
+            {
+              "schema_name":"DoclingDocument","version":"1.0.0",
+              "body":{"self_ref":"#/body","children":[{"$ref":"#/texts/0"}]},
+              "texts":[{"self_ref":"#/texts/0","label":"paragraph","text":"Loose content","children":[],"prov":[]}]
+            }
+            """;
+
+        var block = Assert.Single(DoclingDocumentMapper.Map(document, "pptx").Blocks);
+
+        var locator = Assert.IsType<PresentationSourceLocator>(block.Locator);
+        Assert.Null(locator.SlideNumber);
+        Assert.Empty(locator.Regions);
     }
 
     [Fact]
@@ -119,9 +154,26 @@ public sealed class DoclingMappingTests
     public void NewLocatorSchemasRoundTripAndRejectUnknownProperties()
     {
         var codec = new JsonSourceLocatorCodec();
+        var multiPage = new PagedRegionSourceLocator(
+            "#/texts/1",
+            3,
+            [
+                new SourceProvenanceRegion(
+                    1,
+                    new SourceBoundingBox(1, 10, 9, 2, SourceCoordinateOrigin.BottomLeft),
+                    new SourceCharacterSpan(4, 8),
+                    100,
+                    200),
+                new SourceProvenanceRegion(
+                    2,
+                    new SourceBoundingBox(2, 20, 10, 4, SourceCoordinateOrigin.BottomLeft),
+                    new SourceCharacterSpan(9, 16),
+                    110,
+                    210),
+            ]);
         SourceLocator[] locators =
         [
-            new PagedRegionSourceLocator(2, "#/texts/1", 3, new SourceBoundingBox(1, 10, 9, 2, SourceCoordinateOrigin.BottomLeft), new SourceCharacterSpan(4, 8), 100, 200),
+            multiPage,
             new StructuredDocumentSourceLocator("#/texts/2", 4, ["A"], null, null),
             new PresentationSourceLocator(3, "#/texts/3", 5, "Title", new SourceBoundingBox(1, 2, 3, 4, SourceCoordinateOrigin.TopLeft)),
             new ImageRegionSourceLocator("#/texts/4", 6, new SourceBoundingBox(1, 2, 3, 4, SourceCoordinateOrigin.TopLeft), 640, 480),
@@ -138,6 +190,14 @@ public sealed class DoclingMappingTests
                 locator.SchemaVersion,
                 json.Insert(json.Length - 1, ",\"unknown\":true")));
         }
+
+        var persisted = Assert.IsType<PagedRegionSourceLocator>(codec.Deserialize(
+            multiPage.Kind,
+            multiPage.SchemaVersion,
+            codec.Serialize(multiPage)));
+        Assert.Equal(2, persisted.SchemaVersion);
+        Assert.Equal([1, 2], persisted.Regions.Select(region => region.PageNumber));
+        Assert.Equal(new SourceCharacterSpan(9, 16), persisted.Regions[1].CharacterSpan);
     }
 
     [Fact]
@@ -294,6 +354,36 @@ public sealed class DoclingMappingTests
                 SourceDocumentVersionId.New(),
                 new string('c', 64),
                 "malformed.pdf",
+                "application/pdf"),
+            CancellationToken.None));
+
+        Assert.Equal(ParserInfrastructureFailureCode.ApiIncompatible, exception.Code);
+    }
+
+    [Theory]
+    [MemberData(nameof(StructurallyIncompatibleDocuments))]
+    public async Task StructurallyIncompatibleJsonIsTypedAsApiIncompatibility(string structuredJson)
+    {
+        var parser = new DoclingDocumentParser(
+            new DoclingConfiguration
+            {
+                Mode = DoclingMode.Remote,
+                RemoteEndpoint = new Uri("http://127.0.0.1:5001/"),
+                AllowRemoteDocumentUpload = true,
+            },
+            DoclingConversionProfile.Conservative,
+            new UnusedPackInspector(),
+            new ForbiddenProcessManager(),
+            new XlsxConversionClient(structuredJson),
+            new OpenXmlXlsxStructureReader());
+        await using var source = new MemoryStream([1]);
+
+        var exception = await Assert.ThrowsAsync<ParserInfrastructureException>(() => parser.ParseAsync(
+            source,
+            new ParseSourceDescriptor(
+                SourceDocumentVersionId.New(),
+                new string('d', 64),
+                "incompatible.pdf",
                 "application/pdf"),
             CancellationToken.None));
 

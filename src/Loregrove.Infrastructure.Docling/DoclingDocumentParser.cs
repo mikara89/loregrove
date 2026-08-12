@@ -214,11 +214,11 @@ internal sealed class DoclingDocumentParser :
         {
             mapped = DoclingDocumentMapper.Map(conversion.StructuredJson, format.Format);
         }
-        catch (JsonException exception)
+        catch (Exception exception) when (exception is JsonException or DoclingSchemaException)
         {
             throw new ParserInfrastructureException(
                 ParserInfrastructureFailureCode.ApiIncompatible,
-                "Docling returned malformed structured JSON.",
+                "Docling returned incompatible structured JSON.",
                 exception);
         }
         var blocks = mapped.Blocks.ToList();

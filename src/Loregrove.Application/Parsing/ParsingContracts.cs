@@ -163,26 +163,19 @@ public sealed record SourceCharacterSpan
     public int End { get; }
 }
 
-public sealed record PagedRegionSourceLocator : SourceLocator
+public sealed record SourceProvenanceRegion
 {
-    public PagedRegionSourceLocator(
+    public SourceProvenanceRegion(
         int pageNumber,
-        string itemReference,
-        int documentOrdinal,
         SourceBoundingBox? boundingBox = null,
         SourceCharacterSpan? characterSpan = null,
         double? pageWidth = null,
         double? pageHeight = null)
-        : base(SourceLocatorKind.PagedRegion, 1)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(pageNumber, 1);
-        ArgumentException.ThrowIfNullOrWhiteSpace(itemReference);
-        ArgumentOutOfRangeException.ThrowIfNegative(documentOrdinal);
         ValidatePositiveFinite(pageWidth, nameof(pageWidth));
         ValidatePositiveFinite(pageHeight, nameof(pageHeight));
         PageNumber = pageNumber;
-        ItemReference = itemReference;
-        DocumentOrdinal = documentOrdinal;
         BoundingBox = boundingBox;
         CharacterSpan = characterSpan;
         PageWidth = pageWidth;
@@ -190,8 +183,6 @@ public sealed record PagedRegionSourceLocator : SourceLocator
     }
 
     public int PageNumber { get; }
-    public string ItemReference { get; }
-    public int DocumentOrdinal { get; }
     public SourceBoundingBox? BoundingBox { get; }
     public SourceCharacterSpan? CharacterSpan { get; }
     public double? PageWidth { get; }
@@ -206,6 +197,57 @@ public sealed record PagedRegionSourceLocator : SourceLocator
     }
 }
 
+public sealed record PagedRegionSourceLocator : SourceLocator
+{
+    public PagedRegionSourceLocator(
+        int pageNumber,
+        string itemReference,
+        int documentOrdinal,
+        SourceBoundingBox? boundingBox = null,
+        SourceCharacterSpan? characterSpan = null,
+        double? pageWidth = null,
+        double? pageHeight = null)
+        : this(
+            itemReference,
+            documentOrdinal,
+            [new SourceProvenanceRegion(pageNumber, boundingBox, characterSpan, pageWidth, pageHeight)])
+    {
+    }
+
+    public PagedRegionSourceLocator(
+        string itemReference,
+        int documentOrdinal,
+        IReadOnlyList<SourceProvenanceRegion> regions)
+        : base(SourceLocatorKind.PagedRegion, 2)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(itemReference);
+        ArgumentOutOfRangeException.ThrowIfNegative(documentOrdinal);
+        ArgumentNullException.ThrowIfNull(regions);
+        if (regions.Count == 0)
+        {
+            throw new ArgumentException("At least one paged provenance region is required.", nameof(regions));
+        }
+
+        if (regions.Any(region => region is null))
+        {
+            throw new ArgumentException("Paged provenance regions cannot contain null values.", nameof(regions));
+        }
+
+        ItemReference = itemReference;
+        DocumentOrdinal = documentOrdinal;
+        Regions = regions.ToArray();
+    }
+
+    public int PageNumber => Regions[0].PageNumber;
+    public string ItemReference { get; }
+    public int DocumentOrdinal { get; }
+    public IReadOnlyList<SourceProvenanceRegion> Regions { get; }
+    public SourceBoundingBox? BoundingBox => Regions[0].BoundingBox;
+    public SourceCharacterSpan? CharacterSpan => Regions[0].CharacterSpan;
+    public double? PageWidth => Regions[0].PageWidth;
+    public double? PageHeight => Regions[0].PageHeight;
+}
+
 public sealed record StructuredDocumentSourceLocator : SourceLocator
 {
     public StructuredDocumentSourceLocator(
@@ -213,8 +255,9 @@ public sealed record StructuredDocumentSourceLocator : SourceLocator
         int documentOrdinal,
         IReadOnlyList<string> headingPath,
         int? pageNumber = null,
-        SourceBoundingBox? boundingBox = null)
-        : base(SourceLocatorKind.StructuredDocument, 1)
+        SourceBoundingBox? boundingBox = null,
+        IReadOnlyList<SourceProvenanceRegion>? regions = null)
+        : base(SourceLocatorKind.StructuredDocument, 2)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(itemReference);
         ArgumentOutOfRangeException.ThrowIfNegative(documentOrdinal);
@@ -224,45 +267,65 @@ public sealed record StructuredDocumentSourceLocator : SourceLocator
         }
 
         ArgumentNullException.ThrowIfNull(headingPath);
+        if (regions?.Any(region => region is null) == true)
+        {
+            throw new ArgumentException("Structured provenance regions cannot contain null values.", nameof(regions));
+        }
+
         ItemReference = itemReference;
         DocumentOrdinal = documentOrdinal;
         HeadingPath = headingPath.ToArray();
-        PageNumber = pageNumber;
-        BoundingBox = boundingBox;
+        Regions = regions?.ToArray() ?? (pageNumber is { } page
+            ? [new SourceProvenanceRegion(page, boundingBox)]
+            : []);
     }
 
     public string ItemReference { get; }
     public int DocumentOrdinal { get; }
     public IReadOnlyList<string> HeadingPath { get; }
-    public int? PageNumber { get; }
-    public SourceBoundingBox? BoundingBox { get; }
+    public IReadOnlyList<SourceProvenanceRegion> Regions { get; }
+    public int? PageNumber => Regions.Count == 0 ? null : Regions[0].PageNumber;
+    public SourceBoundingBox? BoundingBox => Regions.Count == 0 ? null : Regions[0].BoundingBox;
 }
 
 public sealed record PresentationSourceLocator : SourceLocator
 {
     public PresentationSourceLocator(
-        int slideNumber,
+        int? slideNumber,
         string itemReference,
         int slideOrdinal,
         string? slideTitle = null,
-        SourceBoundingBox? boundingBox = null)
-        : base(SourceLocatorKind.Presentation, 1)
+        SourceBoundingBox? boundingBox = null,
+        IReadOnlyList<SourceProvenanceRegion>? regions = null)
+        : base(SourceLocatorKind.Presentation, 2)
     {
-        ArgumentOutOfRangeException.ThrowIfLessThan(slideNumber, 1);
+        if (slideNumber < 1)
+        {
+            throw new ArgumentOutOfRangeException(nameof(slideNumber));
+        }
+
         ArgumentException.ThrowIfNullOrWhiteSpace(itemReference);
         ArgumentOutOfRangeException.ThrowIfNegative(slideOrdinal);
+        if (regions?.Any(region => region is null) == true)
+        {
+            throw new ArgumentException("Presentation provenance regions cannot contain null values.", nameof(regions));
+        }
+
         SlideNumber = slideNumber;
         ItemReference = itemReference;
         SlideOrdinal = slideOrdinal;
         SlideTitle = slideTitle;
-        BoundingBox = boundingBox;
+        Regions = regions?.ToArray() ?? (slideNumber is { } slide && boundingBox is not null
+            ? [new SourceProvenanceRegion(slide, boundingBox)]
+            : []);
     }
 
-    public int SlideNumber { get; }
+    public int? SlideNumber { get; }
     public string ItemReference { get; }
     public int SlideOrdinal { get; }
     public string? SlideTitle { get; }
-    public SourceBoundingBox? BoundingBox { get; }
+    public IReadOnlyList<SourceProvenanceRegion> Regions { get; }
+    public SourceBoundingBox? BoundingBox => Regions.Count == 0 ? null : Regions[0].BoundingBox;
 }
 
 public sealed record ImageRegionSourceLocator : SourceLocator
@@ -272,8 +335,9 @@ public sealed record ImageRegionSourceLocator : SourceLocator
         int regionOrdinal,
         SourceBoundingBox? boundingBox = null,
         int? imageWidth = null,
-        int? imageHeight = null)
-        : base(SourceLocatorKind.ImageRegion, 1)
+        int? imageHeight = null,
+        IReadOnlyList<SourceProvenanceRegion>? regions = null)
+        : base(SourceLocatorKind.ImageRegion, 2)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(itemReference);
         ArgumentOutOfRangeException.ThrowIfNegative(regionOrdinal);
@@ -282,16 +346,24 @@ public sealed record ImageRegionSourceLocator : SourceLocator
             throw new ArgumentOutOfRangeException(nameof(imageWidth));
         }
 
+        if (regions?.Any(region => region is null) == true)
+        {
+            throw new ArgumentException("Image provenance regions cannot contain null values.", nameof(regions));
+        }
+
         ItemReference = itemReference;
         RegionOrdinal = regionOrdinal;
-        BoundingBox = boundingBox;
         ImageWidth = imageWidth;
         ImageHeight = imageHeight;
+        Regions = regions?.ToArray() ?? (boundingBox is not null
+            ? [new SourceProvenanceRegion(1, boundingBox)]
+            : []);
     }
 
     public string ItemReference { get; }
     public int RegionOrdinal { get; }
-    public SourceBoundingBox? BoundingBox { get; }
+    public IReadOnlyList<SourceProvenanceRegion> Regions { get; }
+    public SourceBoundingBox? BoundingBox => Regions.Count == 0 ? null : Regions[0].BoundingBox;
     public int? ImageWidth { get; }
     public int? ImageHeight { get; }
 }

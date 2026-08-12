@@ -124,9 +124,10 @@ internal sealed class DoclingV1ApiClient : IDoclingConversionClient, IDisposable
         AddField(multipart, "do_chart_extraction", Lower(conversion.Profile.ChartEnrichmentEnabled));
         request.Content = multipart;
 
-        using var response = await SendAsync(request, _options.SubmitTimeout, cancellationToken).ConfigureAwait(false);
-        EnsureSuccessWithoutRedirect(response);
-        using var json = await ReadJsonAsync(response, cancellationToken).ConfigureAwait(false);
+        using var json = await SendAndReadJsonAsync(
+            request,
+            _options.SubmitTimeout,
+            cancellationToken).ConfigureAwait(false);
         var root = json.RootElement;
         if (!root.TryGetProperty("task_id", out var taskId) || taskId.ValueKind != JsonValueKind.String ||
             string.IsNullOrWhiteSpace(taskId.GetString()))
@@ -147,9 +148,10 @@ internal sealed class DoclingV1ApiClient : IDoclingConversionClient, IDisposable
             HttpMethod.Get,
             Combine(endpoint, PollPathPrefix + Uri.EscapeDataString(taskId)));
         AddApiKey(request, apiKey);
-        using var response = await SendAsync(request, _options.PollRequestTimeout, cancellationToken).ConfigureAwait(false);
-        EnsureSuccessWithoutRedirect(response);
-        using var json = await ReadJsonAsync(response, cancellationToken).ConfigureAwait(false);
+        using var json = await SendAndReadJsonAsync(
+            request,
+            _options.PollRequestTimeout,
+            cancellationToken).ConfigureAwait(false);
         if (!json.RootElement.TryGetProperty("task_status", out var status) || status.ValueKind != JsonValueKind.String)
         {
             throw Incompatible("The Docling poll response omitted task_status.");
@@ -175,23 +177,26 @@ internal sealed class DoclingV1ApiClient : IDoclingConversionClient, IDisposable
             HttpMethod.Get,
             Combine(endpoint, ResultPathPrefix + Uri.EscapeDataString(taskId)));
         AddApiKey(request, apiKey);
-        using var response = await SendAsync(request, _options.ResultTimeout, cancellationToken).ConfigureAwait(false);
-        EnsureSuccessWithoutRedirect(response);
-        using var json = await ReadJsonAsync(response, cancellationToken).ConfigureAwait(false);
+        using var json = await SendAndReadJsonAsync(
+            request,
+            _options.ResultTimeout,
+            cancellationToken).ConfigureAwait(false);
         return DoclingV1ResponseReader.Read(json.RootElement);
     }
 
-    private async Task<HttpResponseMessage> SendAsync(
+    private async Task<JsonDocument> SendAndReadJsonAsync(
         HttpRequestMessage request,
         TimeSpan timeout,
         CancellationToken cancellationToken)
     {
         using var requestTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         requestTimeout.CancelAfter(timeout);
-        return await _httpClient.SendAsync(
+        using var response = await _httpClient.SendAsync(
             request,
             HttpCompletionOption.ResponseHeadersRead,
             requestTimeout.Token).ConfigureAwait(false);
+        EnsureSuccessWithoutRedirect(response);
+        return await ReadJsonAsync(response, requestTimeout.Token).ConfigureAwait(false);
     }
 
     private async Task<JsonDocument> ReadJsonAsync(HttpResponseMessage response, CancellationToken cancellationToken)
