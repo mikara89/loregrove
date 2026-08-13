@@ -47,7 +47,8 @@ Configuration and chunker fingerprints are lowercase SHA-256 over every listed o
 option plus chunker identity/version/schema. Sizing is character-based and deterministic; no
 provider tokenizer is present. Heading changes form boundaries. Small tables, code, formulae, and
 headings stay atomic. Oversized observations split in newline, sentence-like, whitespace, then hard
-character order without gaps, overlap, truncation, or discarded whitespace.
+character order without gaps, overlap, truncation, discarded whitespace, or bisected UTF-16
+surrogate pairs.
 
 ## Chunk content and identity
 
@@ -87,12 +88,21 @@ set, chunks, and spans, replaces relational lexical entries, advances the source
 triggers update the virtual table. Failure rolls back all derived rows. A controlled failure returns
 the source to Parsed and records Failed/Chunking; cancellation returns Pending/Chunking without
 erasing the consumed real attempt. Startup recovery performs the same reset for an interrupted claim.
+Before the transaction starts, the application validates plugin chunker output against the input
+observations: ordinals and identities, canonical hashes and keys, exact source slices, separator-only
+unmapped text, bounds, ordering, and gap/overlap-free coverage must all agree.
+
+`RechunkAsync` is the explicit profile-change transition. It claims a source already at
+Chunked/Pending/Embedding only when the requested fingerprint differs from the current set, then
+atomically promotes the new derivation and leaves the previous set as immutable history. Calling it
+with the current fingerprint is idempotent and returns the existing set.
 
 ```mermaid
 stateDiagram-v2
     Parsed --> Chunking
     Chunking --> Chunked
     Chunked --> Embedding
+    Chunked --> Chunking: re-chunk with new profile
     Chunking --> Parsed: failure/cancellation
     Parsed --> Chunking: retry
 ```

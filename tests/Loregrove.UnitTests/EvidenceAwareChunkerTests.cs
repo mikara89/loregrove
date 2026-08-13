@@ -54,6 +54,23 @@ public sealed class EvidenceAwareChunkerTests
         Assert.Equal(text, string.Concat(spans.Select(span => text[span.AnchorStart..span.AnchorEnd])));
     }
 
+    [Fact]
+    public void HardSplitDoesNotBisectUtf16SurrogatePairs()
+    {
+        var text = new string('a', 1999) + "😀" + new string('b', 2500);
+        var chunker = new EvidenceAwareChunker(new EvidenceAwareChunkerOptions(1200, 2000, 200, 0));
+
+        var first = chunker.Chunk(Document(Observation(0, text, ["Unicode"])), CancellationToken.None);
+        var second = chunker.Chunk(Document(Observation(0, text, ["Unicode"])), CancellationToken.None);
+
+        Assert.All(first, chunk => Assert.True(HasOnlyValidSurrogatePairs(chunk.Text)));
+        Assert.Equal(
+            first.Select(chunk => (chunk.Text, chunk.ContentHash)),
+            second.Select(chunk => (chunk.Text, chunk.ContentHash)));
+        var spans = first.SelectMany(chunk => chunk.EvidenceSpans).OrderBy(span => span.AnchorStart);
+        Assert.Equal(text, string.Concat(spans.Select(span => text[span.AnchorStart..span.AnchorEnd])));
+    }
+
     [Theory]
     [InlineData(ParsedBlockKind.Table)]
     [InlineData(ParsedBlockKind.Code)]
@@ -121,4 +138,24 @@ public sealed class EvidenceAwareChunkerTests
             Hash($"locator-{ordinal}"));
 
     private static string Hash(string value) => ParsedArtifactSerializer.HashText(value);
+
+    private static bool HasOnlyValidSurrogatePairs(string text)
+    {
+        for (var index = 0; index < text.Length; index++)
+        {
+            if (char.IsHighSurrogate(text[index]))
+            {
+                if (++index >= text.Length || !char.IsLowSurrogate(text[index]))
+                {
+                    return false;
+                }
+            }
+            else if (char.IsLowSurrogate(text[index]))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
 }

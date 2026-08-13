@@ -184,14 +184,10 @@ public sealed class ChunkingAndSearchIntegrationTests
             var first = await seedScope.ServiceProvider.GetRequiredService<ChunkSourceService>()
                 .ChunkAsync(versionId, CancellationToken.None);
             Assert.Equal(ChunkSourceDisposition.Chunked, first.Disposition);
-            await context.SourceDocumentVersions.Where(version => version.Id == versionId)
-                .ExecuteUpdateAsync(setters => setters.SetProperty(
-                    version => version.ProcessingState,
-                    SourceProcessingState.Parsed));
-            await context.ProcessingJobs.Where(job => job.DocumentVersionId == versionId)
-                .ExecuteUpdateAsync(setters => setters
-                    .SetProperty(job => job.State, ProcessingJobState.Pending)
-                    .SetProperty(job => job.Stage, ProcessingStage.Chunking));
+            var unchanged = await seedScope.ServiceProvider.GetRequiredService<ChunkSourceService>()
+                .RechunkAsync(versionId, CancellationToken.None);
+            Assert.Equal(ChunkSourceDisposition.AlreadyChunked, unchanged.Disposition);
+            Assert.Equal(first.ChunkSetId, unchanged.ChunkSetId);
         }
 
         SqliteConnection.ClearAllPools();
@@ -199,7 +195,7 @@ public sealed class ChunkingAndSearchIntegrationTests
         await using var secondServices = CreateServices(database.Path, artifacts, changedChunker);
         await using var secondScope = secondServices.CreateAsyncScope();
         var changed = await secondScope.ServiceProvider.GetRequiredService<ChunkSourceService>()
-            .ChunkAsync(versionId, CancellationToken.None);
+            .RechunkAsync(versionId, CancellationToken.None);
         Assert.Equal(ChunkSourceDisposition.Chunked, changed.Disposition);
         var verify = secondScope.ServiceProvider.GetRequiredService<LoregroveDbContext>();
         Assert.Equal(2, await verify.ChunkSets.CountAsync());
@@ -215,6 +211,86 @@ public sealed class ChunkingAndSearchIntegrationTests
             .Select(chunk => chunk.Id)
             .ToArrayAsync();
         Assert.Equal(currentChunkIds.OrderBy(id => id.Value), indexedChunkIds.OrderBy(id => id.Value));
+        Assert.Equal(SourceProcessingState.Chunked,
+            (await verify.SourceDocumentVersions.AsNoTracking().SingleAsync()).ProcessingState);
+        var job = await verify.ProcessingJobs.AsNoTracking().SingleAsync();
+        Assert.Equal(ProcessingJobState.Pending, job.State);
+        Assert.Equal(ProcessingStage.Embedding, job.Stage);
+        Assert.Equal(2, job.AttemptCount);
+    }
+
+    [Fact]
+    public Task ChunkerWithInconsistentSpanLengthsIsRejectedBeforePersistence() =>
+        AssertInvalidChunkerRejectedAsync(InvalidChunkerMode.InconsistentSpanLength);
+
+    [Fact]
+    public Task ChunkerWithValidLengthWrongTextIsRejectedBeforePersistence() =>
+        AssertInvalidChunkerRejectedAsync(InvalidChunkerMode.WrongText);
+
+    [Fact]
+    public async Task SurrogatePairsRemainIntactAfterChunkPersistenceAndReload()
+    {
+        using var database = TemporaryDatabase.Create();
+        var artifacts = new MemoryArtifactStore();
+        var text = new string('a', 1999) + "😀" + new string('b', 2500);
+        SourceDocumentVersionId versionId;
+        string[] expectedChunkTexts;
+        string[] expectedContentHashes;
+        await using (var services = CreateServices(database.Path, artifacts))
+        {
+            await using var scope = services.CreateAsyncScope();
+            var context = scope.ServiceProvider.GetRequiredService<LoregroveDbContext>();
+            await context.Database.MigrateAsync();
+            versionId = await SeedParsedAsync(
+                context,
+                artifacts,
+                scope.ServiceProvider.GetRequiredService<ISourceLocatorCodec>(),
+                [new ParsedBlock(
+                    0,
+                    ParsedBlockKind.Paragraph,
+                    text,
+                    new TextSourceLocator(1, 1),
+                    ["Unicode"])]);
+            var result = await scope.ServiceProvider.GetRequiredService<ChunkSourceService>()
+                .ChunkAsync(versionId, CancellationToken.None);
+            Assert.Equal(ChunkSourceDisposition.Chunked, result.Disposition);
+            var persisted = await context.Chunks.AsNoTracking()
+                .Where(chunk => chunk.DocumentVersionId == versionId)
+                .OrderBy(chunk => chunk.Ordinal)
+                .ToArrayAsync();
+            expectedChunkTexts = persisted.Select(chunk => chunk.Text).ToArray();
+            expectedContentHashes = persisted.Select(chunk => chunk.ContentHash).ToArray();
+        }
+
+        SqliteConnection.ClearAllPools();
+        await using var reloadedServices = CreateServices(database.Path, artifacts);
+        await using var reloadedScope = reloadedServices.CreateAsyncScope();
+        var reloaded = reloadedScope.ServiceProvider.GetRequiredService<LoregroveDbContext>();
+        var chunks = await reloaded.Chunks.AsNoTracking()
+            .Where(chunk => chunk.DocumentVersionId == versionId)
+            .OrderBy(chunk => chunk.Ordinal)
+            .ToArrayAsync();
+        Assert.True(chunks.Length >= 3);
+        Assert.All(chunks, chunk => Assert.True(HasOnlyValidSurrogatePairs(chunk.Text)));
+        Assert.Equal(expectedChunkTexts, chunks.Select(chunk => chunk.Text));
+        Assert.Equal(expectedContentHashes, chunks.Select(chunk => chunk.ContentHash));
+        Assert.Equal(text, string.Concat(chunks.Select(chunk => chunk.Text)));
+        Assert.All(chunks, chunk => Assert.Equal(
+            ParsedArtifactSerializer.HashText($"{chunk.ContextText}\n\n{chunk.Text}"),
+            chunk.ContentHash));
+        var anchorText = await reloaded.SourceAnchors.AsNoTracking()
+            .Where(anchor => anchor.DocumentVersionId == versionId)
+            .Select(anchor => anchor.NormalizedText)
+            .SingleAsync();
+        var evidenceRanges = await (
+            from span in reloaded.ChunkEvidenceSpans.AsNoTracking()
+            join chunk in reloaded.Chunks.AsNoTracking() on span.ChunkId equals chunk.Id
+            where chunk.DocumentVersionId == versionId
+            orderby chunk.Ordinal, span.Ordinal
+            select new { span.AnchorStart, span.AnchorEnd })
+            .ToArrayAsync();
+        Assert.Equal(text, string.Concat(evidenceRanges.Select(
+            range => anchorText[range.AnchorStart..range.AnchorEnd])));
     }
 
     [Fact]
@@ -429,17 +505,18 @@ public sealed class ChunkingAndSearchIntegrationTests
     private static async Task<SourceDocumentVersionId> SeedParsedAsync(
         LoregroveDbContext context,
         MemoryArtifactStore artifactStore,
-        ISourceLocatorCodec locatorCodec)
+        ISourceLocatorCodec locatorCodec,
+        IReadOnlyList<ParsedBlock>? customBlocks = null)
     {
         var now = DateTimeOffset.UtcNow;
         var documentId = SourceDocumentId.New();
         var versionId = SourceDocumentVersionId.New();
         var descriptor = ParserDescriptor.Create("test", "1.0", 1, "fixture");
-        var blocks = new[]
-        {
+        var blocks = customBlocks?.ToArray() ??
+        [
             new ParsedBlock(0, ParsedBlockKind.Paragraph, "SQLite persistence evidence", new TextSourceLocator(1, 1), ["Architecture"]),
             new ParsedBlock(1, ParsedBlockKind.Paragraph, "Security evidence", new TextSourceLocator(2, 2), ["Security"]),
-        };
+        ];
         var parsed = new ParsedDocumentResult(descriptor, blocks, new Dictionary<string, string>());
         var source = new ParseSourceDescriptor(versionId, new string('c', 64), "concurrent.txt", "text/plain");
         var serialized = ParsedArtifactSerializer.Serialize(source, parsed);
@@ -462,6 +539,55 @@ public sealed class ChunkingAndSearchIntegrationTests
         await context.SaveChangesAsync();
         context.ChangeTracker.Clear();
         return versionId;
+    }
+
+    private static async Task AssertInvalidChunkerRejectedAsync(InvalidChunkerMode mode)
+    {
+        using var database = TemporaryDatabase.Create();
+        var artifacts = new MemoryArtifactStore();
+        await using var services = CreateServices(database.Path, artifacts, new InvalidOutputChunker(mode));
+        await using var scope = services.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<LoregroveDbContext>();
+        await context.Database.MigrateAsync();
+        var versionId = await SeedParsedAsync(
+            context,
+            artifacts,
+            scope.ServiceProvider.GetRequiredService<ISourceLocatorCodec>());
+
+        var result = await scope.ServiceProvider.GetRequiredService<ChunkSourceService>()
+            .ChunkAsync(versionId, CancellationToken.None);
+
+        Assert.Equal(ChunkSourceDisposition.Failed, result.Disposition);
+        Assert.Empty(await context.ChunkSets.AsNoTracking().ToArrayAsync());
+        Assert.Empty(await context.Chunks.AsNoTracking().ToArrayAsync());
+        Assert.Empty(await context.ChunkEvidenceSpans.AsNoTracking().ToArrayAsync());
+        Assert.Empty(await context.LexicalSearchEntries.AsNoTracking().ToArrayAsync());
+        Assert.Equal(SourceProcessingState.Parsed,
+            (await context.SourceDocumentVersions.AsNoTracking().SingleAsync()).ProcessingState);
+        var job = await context.ProcessingJobs.AsNoTracking().SingleAsync();
+        Assert.Equal(ProcessingJobState.Failed, job.State);
+        Assert.Equal(ProcessingStage.Chunking, job.Stage);
+        Assert.Equal(1, job.AttemptCount);
+    }
+
+    private static bool HasOnlyValidSurrogatePairs(string text)
+    {
+        for (var index = 0; index < text.Length; index++)
+        {
+            if (char.IsHighSurrogate(text[index]))
+            {
+                if (++index >= text.Length || !char.IsLowSurrogate(text[index]))
+                {
+                    return false;
+                }
+            }
+            else if (char.IsLowSurrogate(text[index]))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static async Task<ParsedArtifactId> AddReplacementParsedAsync(
@@ -636,6 +762,72 @@ public sealed class ChunkingAndSearchIntegrationTests
             }
 
             return _inner.Chunk(document, cancellationToken);
+        }
+    }
+
+    private enum InvalidChunkerMode
+    {
+        InconsistentSpanLength = 0,
+        WrongText = 1,
+    }
+
+    private sealed class InvalidOutputChunker(InvalidChunkerMode mode) : IChunker
+    {
+        private readonly EvidenceAwareChunker _inner = new();
+
+        public ChunkerDescriptor Descriptor => _inner.Descriptor;
+
+        public IReadOnlyList<ChunkCandidate> Chunk(
+            ChunkingDocument document,
+            CancellationToken cancellationToken)
+        {
+            var candidates = _inner.Chunk(document, cancellationToken).ToArray();
+            var first = candidates[0];
+            var evidence = first.EvidenceSpans.ToArray();
+            var text = first.Text;
+            if (mode == InvalidChunkerMode.InconsistentSpanLength)
+            {
+                evidence[0] = evidence[0] with
+                {
+                    AnchorEnd = evidence[0].AnchorEnd - 1,
+                    ChunkEnd = evidence[0].ChunkEnd - 1,
+                };
+            }
+            else
+            {
+                text = $"X{text[1..]}";
+            }
+
+            var contentHash = ParsedArtifactSerializer.HashText(string.IsNullOrEmpty(first.ContextText)
+                ? text
+                : $"{first.ContextText}\n\n{text}");
+            var evidenceIdentity = string.Join(
+                '\n',
+                evidence.Select(span => string.Join(
+                    ':',
+                    span.AnchorOrdinal,
+                    span.AnchorTextHash,
+                    span.LocatorFingerprint,
+                    span.AnchorStart,
+                    span.AnchorEnd,
+                    span.ChunkStart,
+                    span.ChunkEnd)));
+            var chunkKey = ParsedArtifactSerializer.HashText(string.Join(
+                '\n',
+                document.SourceContentHash,
+                document.ParsedArtifactContentHash,
+                Descriptor.Fingerprint,
+                first.Ordinal,
+                contentHash,
+                evidenceIdentity));
+            candidates[0] = first with
+            {
+                Text = text,
+                ContentHash = contentHash,
+                ChunkKey = chunkKey,
+                EvidenceSpans = evidence,
+            };
+            return candidates;
         }
     }
 

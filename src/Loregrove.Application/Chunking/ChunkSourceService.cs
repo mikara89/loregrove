@@ -18,16 +18,21 @@ public sealed class ChunkSourceService(
     public Task<ChunkSourceResult> ChunkAsync(
         SourceDocumentVersionId versionId,
         CancellationToken cancellationToken) =>
-        ChunkCoreAsync(versionId, retryOnly: false, cancellationToken);
+        ChunkCoreAsync(versionId, ChunkOperation.Chunk, cancellationToken);
 
     public Task<ChunkSourceResult> RetryAsync(
         SourceDocumentVersionId versionId,
         CancellationToken cancellationToken) =>
-        ChunkCoreAsync(versionId, retryOnly: true, cancellationToken);
+        ChunkCoreAsync(versionId, ChunkOperation.Retry, cancellationToken);
+
+    public Task<ChunkSourceResult> RechunkAsync(
+        SourceDocumentVersionId versionId,
+        CancellationToken cancellationToken) =>
+        ChunkCoreAsync(versionId, ChunkOperation.Rechunk, cancellationToken);
 
     private async Task<ChunkSourceResult> ChunkCoreAsync(
         SourceDocumentVersionId versionId,
-        bool retryOnly,
+        ChunkOperation operation,
         CancellationToken cancellationToken)
     {
         if (versionId.Value == Guid.Empty)
@@ -54,9 +59,9 @@ public sealed class ChunkSourceService(
             return new ChunkSourceResult(ChunkSourceDisposition.AlreadyChunked, existingSet.Id, existingSet.ChunkCount);
         }
 
-        if (!await TryClaimAsync(versionId, artifactId.Value, retryOnly, cancellationToken).ConfigureAwait(false))
+        if (!await TryClaimAsync(versionId, artifactId.Value, operation, cancellationToken).ConfigureAwait(false))
         {
-            return await ResolveUnclaimedAsync(versionId, artifactId.Value, retryOnly, cancellationToken)
+            return await ResolveUnclaimedAsync(versionId, artifactId.Value, operation, cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -64,6 +69,7 @@ public sealed class ChunkSourceService(
         {
             var document = await documentReader.ReadAsync(versionId, cancellationToken).ConfigureAwait(false);
             var candidates = chunker.Chunk(document, cancellationToken);
+            ChunkCandidateValidator.Validate(document, candidates, chunker.Descriptor);
             await _transactionHook.OnStageAsync(ChunkTransactionStage.AfterChunkGeneration, cancellationToken)
                 .ConfigureAwait(false);
             return await CommitAsync(document, candidates, cancellationToken).ConfigureAwait(false);
@@ -94,22 +100,35 @@ public sealed class ChunkSourceService(
     private async Task<bool> TryClaimAsync(
         SourceDocumentVersionId versionId,
         ParsedArtifactId artifactId,
-        bool retryOnly,
+        ChunkOperation operation,
         CancellationToken cancellationToken)
     {
         var now = _timeProvider.GetUtcNow();
         await using var transaction = await dbContext.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var candidates = dbContext.ProcessingJobs.Where(job =>
-                job.DocumentVersionId == versionId &&
-                job.Stage == ProcessingStage.Chunking &&
-                (retryOnly ? job.State == ProcessingJobState.Failed : job.State == ProcessingJobState.Pending) &&
-                !dbContext.ChunkSets.Any(set =>
-                    set.ParsedArtifactId == artifactId && set.ChunkerFingerprint == chunker.Descriptor.Fingerprint));
+            var candidates = dbContext.ProcessingJobs.Where(job => job.DocumentVersionId == versionId);
+            candidates = operation switch
+            {
+                ChunkOperation.Chunk => candidates.Where(job =>
+                    job.Stage == ProcessingStage.Chunking && job.State == ProcessingJobState.Pending),
+                ChunkOperation.Retry => candidates.Where(job =>
+                    job.Stage == ProcessingStage.Chunking && job.State == ProcessingJobState.Failed),
+                ChunkOperation.Rechunk => candidates.Where(job =>
+                    job.Stage == ProcessingStage.Embedding &&
+                    job.State == ProcessingJobState.Pending &&
+                    dbContext.ChunkSets.Any(set =>
+                        set.DocumentVersionId == versionId &&
+                        set.IsCurrent &&
+                        set.ChunkerFingerprint != chunker.Descriptor.Fingerprint)),
+                _ => throw new ArgumentOutOfRangeException(nameof(operation)),
+            };
+            candidates = candidates.Where(_ => !dbContext.ChunkSets.Any(set =>
+                set.ParsedArtifactId == artifactId && set.ChunkerFingerprint == chunker.Descriptor.Fingerprint));
             var changed = await candidates.ExecuteUpdateAsync(
                 setters => setters
                     .SetProperty(job => job.State, ProcessingJobState.Processing)
+                    .SetProperty(job => job.Stage, ProcessingStage.Chunking)
                     .SetProperty(job => job.AttemptCount, job => job.AttemptCount + 1)
                     .SetProperty(job => job.UpdatedAt, now)
                     .SetProperty(job => job.LastError, (string?)null),
@@ -121,7 +140,11 @@ public sealed class ChunkSourceService(
             }
 
             var sourceChanged = await dbContext.SourceDocumentVersions
-                .Where(version => version.Id == versionId && version.ProcessingState == SourceProcessingState.Parsed)
+                .Where(version =>
+                    version.Id == versionId &&
+                    version.ProcessingState == (operation == ChunkOperation.Rechunk
+                        ? SourceProcessingState.Chunked
+                        : SourceProcessingState.Parsed))
                 .ExecuteUpdateAsync(
                     setters => setters.SetProperty(version => version.ProcessingState, SourceProcessingState.Chunking),
                     cancellationToken).ConfigureAwait(false);
@@ -266,7 +289,7 @@ public sealed class ChunkSourceService(
     private async Task<ChunkSourceResult> ResolveUnclaimedAsync(
         SourceDocumentVersionId versionId,
         ParsedArtifactId artifactId,
-        bool retryOnly,
+        ChunkOperation operation,
         CancellationToken cancellationToken)
     {
         var existing = await FindExistingAsync(artifactId, cancellationToken).ConfigureAwait(false);
@@ -290,7 +313,12 @@ public sealed class ChunkSourceService(
 
         return new ChunkSourceResult(
             ChunkSourceDisposition.NotReady,
-            Message: retryOnly ? "The source does not have a failed chunking attempt to retry." : null);
+            Message: operation switch
+            {
+                ChunkOperation.Retry => "The source does not have a failed chunking attempt to retry.",
+                ChunkOperation.Rechunk => "The source does not have a current chunk set that requires re-chunking.",
+                _ => null,
+            });
     }
 
     private async Task MarkFailedAsync(SourceDocumentVersionId versionId, string message)
@@ -347,5 +375,12 @@ public sealed class ChunkSourceService(
             dbContext.ClearTrackedChanges();
             throw;
         }
+    }
+
+    private enum ChunkOperation
+    {
+        Chunk = 0,
+        Retry = 1,
+        Rechunk = 2,
     }
 }

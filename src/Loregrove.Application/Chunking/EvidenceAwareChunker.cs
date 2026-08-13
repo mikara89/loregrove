@@ -119,6 +119,16 @@ public sealed class EvidenceAwareChunker : IChunker
             }
         }
 
+        var boundary = offset + maximum;
+        if (boundary < text.Length &&
+            char.IsHighSurrogate(text[boundary - 1]) &&
+            char.IsLowSurrogate(text[boundary]))
+        {
+            // A UTF-16 surrogate pair is indivisible. Profiles with a one-character maximum must
+            // allow this documented two-code-unit exception rather than persist invalid Unicode.
+            return maximum == 1 ? 2 : maximum - 1;
+        }
+
         return maximum;
     }
 
