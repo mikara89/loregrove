@@ -84,6 +84,60 @@ main {
     gap: 24px;
 }
 
+.search-card {
+    display: grid;
+    gap: 24px;
+}
+
+.search-card fluent-text-input {
+    width: min(100%, 720px);
+}
+
+.search-empty-state {
+    display: grid;
+    justify-items: center;
+    gap: 8px;
+    border: 1px solid #d8ded8;
+    border-radius: 10px;
+    padding: 56px 28px;
+    background: #f8faf7;
+    text-align: center;
+}
+
+.search-empty-state h2,
+.search-empty-state p,
+.search-count {
+    margin: 0;
+}
+
+.search-results {
+    display: grid;
+    gap: 14px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.search-result-card {
+    display: grid;
+    gap: 10px;
+    padding: 20px;
+}
+
+.search-result-card p {
+    margin: 0;
+}
+
+.search-context {
+    color: #315a48;
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.search-snippet {
+    white-space: pre-wrap;
+}
+
 .library-card h1,
 .source-details-card h1 {
     margin-bottom: 8px;

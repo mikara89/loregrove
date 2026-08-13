@@ -25,6 +25,8 @@
 | Docling | Pinned async Serve v1 adapter; ManagedLocal pack or consented Remote endpoint; Disabled/OneShot defer |
 | Complex parsed evidence | Canonical Docling JSON + Markdown; XLSX also preserves deterministic Open XML structure |
 | Complex source locators | Typed PDF page/region, DOCX hierarchy, PPTX slide, image region, and XLSX sheet/range locators |
+| Retrieval chunks | Deterministic versioned ChunkSets with exact half-open ChunkEvidenceSpans to SourceAnchors |
+| Lexical search | SQLite FTS5 external-content projection over current source names and chunks; literal queries only |
 | Knowledge truth model | Evidence separate from generated interpretation |
 | Clarification | Review Inbox + durable user resolutions |
 | Docs diagrams | Mermaid |

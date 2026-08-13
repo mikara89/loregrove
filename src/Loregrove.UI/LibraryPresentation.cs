@@ -71,6 +71,8 @@ public static class LibraryPresentation
         SourceProcessingState.Parsing => "Parsing",
         SourceProcessingState.Parsed => "Parsed",
         SourceProcessingState.ParseFailed => "Parse failed",
+        SourceProcessingState.Chunking => "Chunking",
+        SourceProcessingState.Chunked => "Chunked",
         _ => "Unknown",
     };
 

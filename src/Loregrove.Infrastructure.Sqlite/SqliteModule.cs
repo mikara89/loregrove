@@ -1,3 +1,4 @@
+using Loregrove.Application.Chunking;
 using Loregrove.Application.Library;
 using Loregrove.Application.Parsing;
 using Loregrove.Application.Persistence;
@@ -34,6 +35,7 @@ public static class SqliteModule
         services.AddScoped<IProcessingJobRecovery, ProcessingJobRecovery>();
         services.AddScoped<ImportSourceService>();
         services.AddScoped<LibraryQueryService>();
+        services.AddLoregroveChunking();
         services.AddSingleton<ILibraryInitializer, SqliteLibraryInitializer>();
         return services;
     }

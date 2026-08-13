@@ -4,9 +4,10 @@
 
 ```mermaid
 flowchart TB
-    S[SourceDocument / SourceDocumentVersion] --> A[SourceAnchor]
-    A --> P[ParsedArtifact / DocumentChunk]
-    P --> C[KnowledgeCandidate]
+    S[SourceDocument / SourceDocumentVersion] --> P[ParsedArtifact]
+    P --> A[SourceAnchor]
+    A --> CH[Chunk / ChunkEvidenceSpan]
+    CH --> C[KnowledgeCandidate]
     C --> RES[Resolution and clarification]
     RES --> N[KnowledgeNode]
     RES --> AS[KnowledgeAssertion]

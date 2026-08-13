@@ -7,6 +7,8 @@ public enum SourceProcessingState
     Parsing = 2,
     Parsed = 3,
     ParseFailed = 4,
+    Chunking = 5,
+    Chunked = 6,
 }
 
 public enum ProcessingJobState
@@ -21,4 +23,5 @@ public enum ProcessingStage
 {
     Parsing = 0,
     Chunking = 1,
+    Embedding = 2,
 }

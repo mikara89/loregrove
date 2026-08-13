@@ -21,6 +21,13 @@ public sealed class ProcessingJobRecovery(
             .Select(job => job.DocumentVersionId)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
+        var chunkingVersionIds = await dbContext.ProcessingJobs
+            .Where(job =>
+                job.State == ProcessingJobState.Processing &&
+                job.Stage == ProcessingStage.Chunking)
+            .Select(job => job.DocumentVersionId)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
         var recovered = await dbContext.ProcessingJobs
             .Where(job => job.State == ProcessingJobState.Processing)
             .ExecuteUpdateAsync(
@@ -37,6 +44,17 @@ public sealed class ProcessingJobRecovery(
                     setters => setters.SetProperty(
                         version => version.ProcessingState,
                         SourceProcessingState.PendingProcessing),
+                    cancellationToken).ConfigureAwait(false);
+        }
+
+        if (chunkingVersionIds.Count > 0)
+        {
+            await dbContext.SourceDocumentVersions
+                .Where(version => chunkingVersionIds.Contains(version.Id))
+                .ExecuteUpdateAsync(
+                    setters => setters.SetProperty(
+                        version => version.ProcessingState,
+                        SourceProcessingState.Parsed),
                     cancellationToken).ConfigureAwait(false);
         }
 
