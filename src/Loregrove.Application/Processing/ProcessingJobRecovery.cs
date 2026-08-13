@@ -28,6 +28,11 @@ public sealed class ProcessingJobRecovery(
             .Select(job => job.DocumentVersionId)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
+        var chunkingVersionsWithCurrentSet = await dbContext.ChunkSets
+            .Where(set => set.IsCurrent && chunkingVersionIds.Contains(set.DocumentVersionId))
+            .Select(set => set.DocumentVersionId)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
         var recovered = await dbContext.ProcessingJobs
             .Where(job => job.State == ProcessingJobState.Processing)
             .ExecuteUpdateAsync(
@@ -36,6 +41,14 @@ public sealed class ProcessingJobRecovery(
                     .SetProperty(job => job.LastError, (string?)null)
                     .SetProperty(job => job.UpdatedAt, recoveredAt),
                 cancellationToken).ConfigureAwait(false);
+        if (chunkingVersionsWithCurrentSet.Count > 0)
+        {
+            await dbContext.ProcessingJobs
+                .Where(job => chunkingVersionsWithCurrentSet.Contains(job.DocumentVersionId))
+                .ExecuteUpdateAsync(
+                    setters => setters.SetProperty(job => job.Stage, ProcessingStage.Embedding),
+                    cancellationToken).ConfigureAwait(false);
+        }
         if (parsingVersionIds.Count > 0)
         {
             await dbContext.SourceDocumentVersions
@@ -50,11 +63,24 @@ public sealed class ProcessingJobRecovery(
         if (chunkingVersionIds.Count > 0)
         {
             await dbContext.SourceDocumentVersions
-                .Where(version => chunkingVersionIds.Contains(version.Id))
+                .Where(version =>
+                    chunkingVersionIds.Contains(version.Id) &&
+                    !chunkingVersionsWithCurrentSet.Contains(version.Id))
                 .ExecuteUpdateAsync(
                     setters => setters.SetProperty(
                         version => version.ProcessingState,
                         SourceProcessingState.Parsed),
+                    cancellationToken).ConfigureAwait(false);
+        }
+
+        if (chunkingVersionsWithCurrentSet.Count > 0)
+        {
+            await dbContext.SourceDocumentVersions
+                .Where(version => chunkingVersionsWithCurrentSet.Contains(version.Id))
+                .ExecuteUpdateAsync(
+                    setters => setters.SetProperty(
+                        version => version.ProcessingState,
+                        SourceProcessingState.Chunked),
                     cancellationToken).ConfigureAwait(false);
         }
 

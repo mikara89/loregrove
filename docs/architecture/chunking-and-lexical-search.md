@@ -85,9 +85,13 @@ share the same artifact and source version. CHECK constraints validate all range
 
 Chunk generation occurs in memory. One SQLite transaction switches the current set, inserts the
 set, chunks, and spans, replaces relational lexical entries, advances the source/job, and lets FTS
-triggers update the virtual table. Failure rolls back all derived rows. A controlled failure returns
+triggers update the virtual table. Failure rolls back all derived rows. Initial-chunk failure returns
 the source to Parsed and records Failed/Chunking; cancellation returns Pending/Chunking without
-erasing the consumed real attempt. Startup recovery performs the same reset for an interrupted claim.
+erasing the consumed real attempt. If a re-chunk fails, its old current set and search projection
+remain authoritative, so the source stays Chunked at Failed/Chunking and `RetryAsync` can claim it
+again. Cancelled or interrupted re-chunking restores Chunked/Pending/Embedding. Startup recovery uses
+the presence of a current set to distinguish these paths.
+
 Before the transaction starts, the application validates plugin chunker output against the input
 observations: ordinals and identities, canonical hashes and keys, exact source slices, separator-only
 unmapped text, bounds, ordering, and gap/overlap-free coverage must all agree.
@@ -103,7 +107,8 @@ stateDiagram-v2
     Chunking --> Chunked
     Chunked --> Embedding
     Chunked --> Chunking: re-chunk with new profile
-    Chunking --> Parsed: failure/cancellation
+    Chunking --> Parsed: initial failure/cancellation
+    Chunking --> Chunked: re-chunk failure/cancellation/recovery
     Parsed --> Chunking: retry
 ```
 

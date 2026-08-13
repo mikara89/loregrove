@@ -107,6 +107,9 @@ public sealed class ChunkSourceService(
         await using var transaction = await dbContext.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            var hasCurrentChunkSet = await dbContext.ChunkSets.AsNoTracking()
+                .AnyAsync(set => set.DocumentVersionId == versionId && set.IsCurrent, cancellationToken)
+                .ConfigureAwait(false);
             var candidates = dbContext.ProcessingJobs.Where(job => job.DocumentVersionId == versionId);
             candidates = operation switch
             {
@@ -139,10 +142,12 @@ public sealed class ChunkSourceService(
                 return false;
             }
 
+            var sourceWasChunked = operation == ChunkOperation.Rechunk ||
+                operation == ChunkOperation.Retry && hasCurrentChunkSet;
             var sourceChanged = await dbContext.SourceDocumentVersions
                 .Where(version =>
                     version.Id == versionId &&
-                    version.ProcessingState == (operation == ChunkOperation.Rechunk
+                    version.ProcessingState == (sourceWasChunked
                         ? SourceProcessingState.Chunked
                         : SourceProcessingState.Parsed))
                 .ExecuteUpdateAsync(
@@ -331,7 +336,18 @@ public sealed class ChunkSourceService(
                 .ConfigureAwait(false);
             var job = await dbContext.ProcessingJobs.SingleAsync(item => item.DocumentVersionId == versionId)
                 .ConfigureAwait(false);
-            version.ReturnToParsed();
+            var hasCurrentChunkSet = await dbContext.ChunkSets.AsNoTracking()
+                .AnyAsync(set => set.DocumentVersionId == versionId && set.IsCurrent)
+                .ConfigureAwait(false);
+            if (hasCurrentChunkSet)
+            {
+                version.MarkChunked();
+            }
+            else
+            {
+                version.ReturnToParsed();
+            }
+
             job.FailChunking(now, message);
             await dbContext.SaveChangesAsync(CancellationToken.None).ConfigureAwait(false);
             await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
@@ -351,6 +367,9 @@ public sealed class ChunkSourceService(
         await using var transaction = await dbContext.BeginTransactionAsync(CancellationToken.None).ConfigureAwait(false);
         try
         {
+            var hasCurrentChunkSet = await dbContext.ChunkSets.AsNoTracking()
+                .AnyAsync(set => set.DocumentVersionId == versionId && set.IsCurrent)
+                .ConfigureAwait(false);
             await dbContext.ProcessingJobs
                 .Where(job => job.DocumentVersionId == versionId &&
                               job.State == ProcessingJobState.Processing &&
@@ -358,13 +377,18 @@ public sealed class ChunkSourceService(
                 .ExecuteUpdateAsync(
                     setters => setters
                         .SetProperty(job => job.State, ProcessingJobState.Pending)
+                        .SetProperty(job => job.Stage, hasCurrentChunkSet
+                            ? ProcessingStage.Embedding
+                            : ProcessingStage.Chunking)
                         .SetProperty(job => job.UpdatedAt, now)
                         .SetProperty(job => job.LastError, (string?)null),
                     CancellationToken.None).ConfigureAwait(false);
             await dbContext.SourceDocumentVersions
                 .Where(version => version.Id == versionId && version.ProcessingState == SourceProcessingState.Chunking)
                 .ExecuteUpdateAsync(
-                    setters => setters.SetProperty(version => version.ProcessingState, SourceProcessingState.Parsed),
+                    setters => setters.SetProperty(
+                        version => version.ProcessingState,
+                        hasCurrentChunkSet ? SourceProcessingState.Chunked : SourceProcessingState.Parsed),
                     CancellationToken.None).ConfigureAwait(false);
             await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
             dbContext.ClearTrackedChanges();

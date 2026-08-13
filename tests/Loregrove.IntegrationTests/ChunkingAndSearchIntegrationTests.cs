@@ -46,6 +46,9 @@ public sealed class ChunkingAndSearchIntegrationTests
         var context = verifyScope.ServiceProvider.GetRequiredService<LoregroveDbContext>();
         Assert.Equal(1, await context.ChunkSets.CountAsync());
         Assert.Equal(1, await context.ChunkSets.CountAsync(set => set.IsCurrent));
+        Assert.Equal(
+            new EvidenceAwareChunker().Descriptor.Fingerprint,
+            (await context.ChunkSets.AsNoTracking().SingleAsync(set => set.IsCurrent)).ChunkerFingerprint);
         Assert.Equal(2, await context.Chunks.CountAsync());
         Assert.Equal(2, await context.ChunkEvidenceSpans.CountAsync());
         Assert.Equal(3, await context.LexicalSearchEntries.CountAsync());
@@ -82,6 +85,12 @@ public sealed class ChunkingAndSearchIntegrationTests
             var failed = await firstScope.ServiceProvider.GetRequiredService<ChunkSourceService>()
                 .ChunkAsync(versionId, CancellationToken.None);
             Assert.Equal(ChunkSourceDisposition.Failed, failed.Disposition);
+            var context = firstScope.ServiceProvider.GetRequiredService<LoregroveDbContext>();
+            Assert.Equal(SourceProcessingState.Parsed,
+                (await context.SourceDocumentVersions.AsNoTracking().SingleAsync()).ProcessingState);
+            var job = await context.ProcessingJobs.AsNoTracking().SingleAsync();
+            Assert.Equal(ProcessingJobState.Failed, job.State);
+            Assert.Equal(ProcessingStage.Chunking, job.Stage);
         }
 
         await using (var retryScope = services.CreateAsyncScope())
@@ -217,6 +226,99 @@ public sealed class ChunkingAndSearchIntegrationTests
         Assert.Equal(ProcessingJobState.Pending, job.State);
         Assert.Equal(ProcessingStage.Embedding, job.Stage);
         Assert.Equal(2, job.AttemptCount);
+    }
+
+    [Fact]
+    public async Task FailedRechunkRetainsCurrentDerivationAndCanBeRetried()
+    {
+        using var database = TemporaryDatabase.Create();
+        var artifacts = new MemoryArtifactStore();
+        var versionId = await SeedAndChunkAsync(database.Path, artifacts);
+        var changedChunker = new FailOnceChunker(
+            new EvidenceAwareChunker(new EvidenceAwareChunkerOptions(80, 160, 20, 0)));
+        await using var services = CreateServices(database.Path, artifacts, changedChunker);
+
+        await using (var failedScope = services.CreateAsyncScope())
+        {
+            var result = await failedScope.ServiceProvider.GetRequiredService<ChunkSourceService>()
+                .RechunkAsync(versionId, CancellationToken.None);
+            Assert.Equal(ChunkSourceDisposition.Failed, result.Disposition);
+            await AssertCurrentDerivationRetainedAsync(
+                failedScope.ServiceProvider,
+                versionId,
+                ProcessingJobState.Failed,
+                ProcessingStage.Chunking);
+        }
+
+        await using var retryScope = services.CreateAsyncScope();
+        var retried = await retryScope.ServiceProvider.GetRequiredService<ChunkSourceService>()
+            .RetryAsync(versionId, CancellationToken.None);
+        Assert.Equal(ChunkSourceDisposition.Chunked, retried.Disposition);
+        var context = retryScope.ServiceProvider.GetRequiredService<LoregroveDbContext>();
+        Assert.Equal(2, await context.ChunkSets.CountAsync());
+        Assert.Equal(changedChunker.Descriptor.Fingerprint,
+            (await context.ChunkSets.AsNoTracking().SingleAsync(set => set.IsCurrent)).ChunkerFingerprint);
+        Assert.Equal(3, (await context.ProcessingJobs.AsNoTracking().SingleAsync()).AttemptCount);
+    }
+
+    [Fact]
+    public async Task CancelledRechunkRetainsCurrentDerivationAndReturnsToEmbedding()
+    {
+        using var database = TemporaryDatabase.Create();
+        var artifacts = new MemoryArtifactStore();
+        var versionId = await SeedAndChunkAsync(database.Path, artifacts);
+        using var cancellation = new CancellationTokenSource();
+        var changedChunker = new EvidenceAwareChunker(new EvidenceAwareChunkerOptions(80, 160, 20, 0));
+        await using var services = CreateServices(
+            database.Path,
+            artifacts,
+            changedChunker,
+            new CancelingChunkHook(cancellation));
+        await using var scope = services.CreateAsyncScope();
+
+        var result = await scope.ServiceProvider.GetRequiredService<ChunkSourceService>()
+            .RechunkAsync(versionId, cancellation.Token);
+
+        Assert.Equal(ChunkSourceDisposition.Cancelled, result.Disposition);
+        await AssertCurrentDerivationRetainedAsync(
+            scope.ServiceProvider,
+            versionId,
+            ProcessingJobState.Pending,
+            ProcessingStage.Embedding);
+        Assert.Equal(2,
+            (await scope.ServiceProvider.GetRequiredService<LoregroveDbContext>()
+                .ProcessingJobs.AsNoTracking().SingleAsync()).AttemptCount);
+    }
+
+    [Fact]
+    public async Task RestartRecoveryRetainsCurrentDerivationAndReturnsToEmbedding()
+    {
+        using var database = TemporaryDatabase.Create();
+        var artifacts = new MemoryArtifactStore();
+        var versionId = await SeedAndChunkAsync(database.Path, artifacts);
+        await using var services = CreateServices(database.Path, artifacts);
+        await using var scope = services.CreateAsyncScope();
+        var context = scope.ServiceProvider.GetRequiredService<LoregroveDbContext>();
+        await context.SourceDocumentVersions.Where(version => version.Id == versionId)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(
+                version => version.ProcessingState,
+                SourceProcessingState.Chunking));
+        await context.ProcessingJobs.Where(job => job.DocumentVersionId == versionId)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(job => job.State, ProcessingJobState.Processing)
+                .SetProperty(job => job.Stage, ProcessingStage.Chunking)
+                .SetProperty(job => job.AttemptCount, 2));
+
+        var recovered = await scope.ServiceProvider.GetRequiredService<IProcessingJobRecovery>()
+            .RecoverInterruptedJobsAsync(CancellationToken.None);
+
+        Assert.Equal(1, recovered);
+        await AssertCurrentDerivationRetainedAsync(
+            scope.ServiceProvider,
+            versionId,
+            ProcessingJobState.Pending,
+            ProcessingStage.Embedding);
+        Assert.Equal(2, (await context.ProcessingJobs.AsNoTracking().SingleAsync()).AttemptCount);
     }
 
     [Fact]
@@ -502,6 +604,54 @@ public sealed class ChunkingAndSearchIntegrationTests
         return services.BuildServiceProvider(validateScopes: true);
     }
 
+    private static async Task<SourceDocumentVersionId> SeedAndChunkAsync(
+        string databasePath,
+        MemoryArtifactStore artifacts)
+    {
+        SourceDocumentVersionId versionId;
+        await using (var services = CreateServices(databasePath, artifacts))
+        {
+            await using var scope = services.CreateAsyncScope();
+            var context = scope.ServiceProvider.GetRequiredService<LoregroveDbContext>();
+            await context.Database.MigrateAsync();
+            versionId = await SeedParsedAsync(
+                context,
+                artifacts,
+                scope.ServiceProvider.GetRequiredService<ISourceLocatorCodec>());
+            var result = await scope.ServiceProvider.GetRequiredService<ChunkSourceService>()
+                .ChunkAsync(versionId, CancellationToken.None);
+            Assert.Equal(ChunkSourceDisposition.Chunked, result.Disposition);
+        }
+
+        SqliteConnection.ClearAllPools();
+        return versionId;
+    }
+
+    private static async Task AssertCurrentDerivationRetainedAsync(
+        IServiceProvider services,
+        SourceDocumentVersionId versionId,
+        ProcessingJobState expectedJobState,
+        ProcessingStage expectedJobStage)
+    {
+        var context = services.GetRequiredService<LoregroveDbContext>();
+        Assert.Equal(1, await context.ChunkSets.CountAsync());
+        Assert.Equal(1, await context.ChunkSets.CountAsync(set => set.IsCurrent));
+        Assert.Equal(2, await context.Chunks.CountAsync());
+        Assert.Equal(2, await context.ChunkEvidenceSpans.CountAsync());
+        Assert.Equal(3, await context.LexicalSearchEntries.CountAsync());
+        Assert.Equal(SourceProcessingState.Chunked,
+            (await context.SourceDocumentVersions.AsNoTracking()
+                .SingleAsync(version => version.Id == versionId)).ProcessingState);
+        var job = await context.ProcessingJobs.AsNoTracking()
+            .SingleAsync(item => item.DocumentVersionId == versionId);
+        Assert.Equal(expectedJobState, job.State);
+        Assert.Equal(expectedJobStage, job.Stage);
+        var search = services.GetRequiredService<ILexicalSearchService>();
+        Assert.Single((await search.SearchAsync(
+            new LexicalSearchQuery("sqlite"),
+            CancellationToken.None)).Items);
+    }
+
     private static async Task<SourceDocumentVersionId> SeedParsedAsync(
         LoregroveDbContext context,
         MemoryArtifactStore artifactStore,
@@ -746,9 +896,9 @@ public sealed class ChunkingAndSearchIntegrationTests
             Task.FromResult(_artifacts.ContainsKey(artifactObjectKey));
     }
 
-    private sealed class FailOnceChunker : IChunker
+    private sealed class FailOnceChunker(IChunker? inner = null) : IChunker
     {
-        private readonly EvidenceAwareChunker _inner = new();
+        private readonly IChunker _inner = inner ?? new EvidenceAwareChunker();
         private int _attempts;
         public ChunkerDescriptor Descriptor => _inner.Descriptor;
 
