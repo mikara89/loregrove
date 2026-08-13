@@ -1,3 +1,6 @@
+using Loregrove.Application.Search;
+using Microsoft.Extensions.DependencyInjection;
+
 namespace Loregrove.Application.Client;
 
 /// <summary>
@@ -21,9 +24,23 @@ public sealed class LoregroveClient(
     public IAskClient Ask { get; } = ask;
 }
 
-public sealed class SearchClient : ISearchClient
+public sealed class SearchClient(IServiceScopeFactory? scopeFactory = null) : ISearchClient
 {
     public string Name => "Search";
+
+    public async Task<LexicalSearchPage> SearchAsync(
+        LexicalSearchQuery query,
+        CancellationToken cancellationToken)
+    {
+        if (scopeFactory is null)
+        {
+            throw new InvalidOperationException("The Search client is not connected to an application service scope.");
+        }
+
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var search = scope.ServiceProvider.GetRequiredService<ILexicalSearchService>();
+        return await search.SearchAsync(query, cancellationToken).ConfigureAwait(false);
+    }
 }
 
 public sealed class KnowledgeClient : IKnowledgeClient

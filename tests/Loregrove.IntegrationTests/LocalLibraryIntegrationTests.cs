@@ -30,6 +30,7 @@ public sealed class LocalLibraryIntegrationTests
         var migrations = await context.Database.GetAppliedMigrationsAsync();
         Assert.Contains("20260811183241_InitialSqlitePersistence", migrations);
         Assert.Contains("20260812170000_DoclingComplexDocumentEvidence", migrations);
+        Assert.Contains("20260813081457_ProvenancePreservingChunksAndFts5", migrations);
         Assert.Equal(1, await context.SourceDocuments.CountAsync());
         Assert.Equal(ImportDisposition.Created, first.Disposition);
     }

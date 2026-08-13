@@ -18,6 +18,14 @@ public sealed class LoregroveDbContext(DbContextOptions<LoregroveDbContext> opti
 
     public DbSet<SourceAnchor> SourceAnchors => Set<SourceAnchor>();
 
+    public DbSet<ChunkSet> ChunkSets => Set<ChunkSet>();
+
+    public DbSet<Chunk> Chunks => Set<Chunk>();
+
+    public DbSet<ChunkEvidenceSpan> ChunkEvidenceSpans => Set<ChunkEvidenceSpan>();
+
+    public DbSet<LexicalSearchEntry> LexicalSearchEntries => Set<LexicalSearchEntry>();
+
     public async Task<ILoregroveDbTransaction> BeginTransactionAsync(CancellationToken cancellationToken) =>
         new LoregroveDbTransaction(
             await Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false));

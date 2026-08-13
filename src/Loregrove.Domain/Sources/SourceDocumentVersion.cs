@@ -87,6 +87,12 @@ public sealed class SourceDocumentVersion
 
     public void MarkParseFailed() => ProcessingState = SourceProcessingState.ParseFailed;
 
+    public void MarkChunking() => ProcessingState = SourceProcessingState.Chunking;
+
+    public void MarkChunked() => ProcessingState = SourceProcessingState.Chunked;
+
+    public void ReturnToParsed() => ProcessingState = SourceProcessingState.Parsed;
+
     public void ReturnToPendingProcessing() => ProcessingState = SourceProcessingState.PendingProcessing;
 
     private static bool IsSha256(string value) =>

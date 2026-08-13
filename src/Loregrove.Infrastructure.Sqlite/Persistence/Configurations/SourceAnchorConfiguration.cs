@@ -10,6 +10,7 @@ public sealed class SourceAnchorConfiguration : IEntityTypeConfiguration<SourceA
     {
         builder.ToTable("SourceAnchors");
         builder.HasKey(anchor => anchor.Id);
+        builder.HasAlternateKey(anchor => new { anchor.Id, anchor.ParsedArtifactId, anchor.DocumentVersionId });
         builder.Property(anchor => anchor.Id)
             .HasConversion(id => id.Value, value => new SourceAnchorId(value))
             .ValueGeneratedNever();

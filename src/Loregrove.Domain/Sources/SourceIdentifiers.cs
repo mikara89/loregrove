@@ -24,3 +24,13 @@ public readonly record struct SourceAnchorId(Guid Value)
 {
     public static SourceAnchorId New() => new(Guid.NewGuid());
 }
+
+public readonly record struct ChunkSetId(Guid Value)
+{
+    public static ChunkSetId New() => new(Guid.NewGuid());
+}
+
+public readonly record struct ChunkId(Guid Value)
+{
+    public static ChunkId New() => new(Guid.NewGuid());
+}

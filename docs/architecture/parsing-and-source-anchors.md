@@ -32,12 +32,12 @@ flowchart TB
     ORIGINAL[Tier 1: immutable source]
     PARSED[Tier 2: ParsedArtifact]
     ANCHOR[Tier 2: SourceAnchor]
-    CHUNK[Future retrieval chunk]
+    CHUNK[Derived retrieval chunk]
     KNOWLEDGE[Future canonical knowledge]
 
     ORIGINAL --> PARSED
     PARSED --> ANCHOR
-    ANCHOR -. Prompt 08 .-> CHUNK
+    ANCHOR --> CHUNK
     ANCHOR -. later evidence .-> KNOWLEDGE
 ```
 
@@ -188,5 +188,6 @@ contract. Unsupported formats and unavailable conversion modes remain pending an
 extension does not alter the trust model, immutable source identity, locator envelope, or
 transaction semantics established for TXT and Markdown.
 
-No worker process, chunk, FTS table, embedding, vector index, AI provider, generated knowledge, or
-source preview is introduced by this architecture.
+Prompt 08 derives versioned chunks and the rebuildable FTS5 projection described in
+[Chunking and lexical search](chunking-and-lexical-search.md). No embedding, vector index, AI
+provider, generated knowledge, or source preview is introduced by that extension.

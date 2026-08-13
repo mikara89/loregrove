@@ -15,6 +15,14 @@ public interface ILoregroveDbContext
 
     DbSet<SourceAnchor> SourceAnchors { get; }
 
+    DbSet<ChunkSet> ChunkSets { get; }
+
+    DbSet<Chunk> Chunks { get; }
+
+    DbSet<ChunkEvidenceSpan> ChunkEvidenceSpans { get; }
+
+    DbSet<LexicalSearchEntry> LexicalSearchEntries { get; }
+
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 
     Task<ILoregroveDbTransaction> BeginTransactionAsync(CancellationToken cancellationToken);

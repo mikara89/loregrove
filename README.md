@@ -8,7 +8,8 @@ duplicate reporting, paged/filterable SQLite results, and source metadata detail
 Markdown, PDF, DOCX, PPTX, XLSX, and common image sources can be parsed into immutable deterministic
 artifacts and typed Tier-2 source anchors. Complex formats use the optional managed local Docling
 Processing Pack or an explicitly consented remote Docling endpoint; XLSX additionally preserves its
-Open XML structure. Search, AI, and knowledge extraction are not implemented yet.
+Open XML structure. Deterministic provenance-preserving chunks and offline SQLite FTS5 search are
+implemented. AI, embeddings, and knowledge extraction are not implemented yet.
 
 ## Current targets
 
@@ -85,5 +86,6 @@ See [production boundaries](docs/architecture/production-boundaries.md),
 [parsing and source anchors](docs/architecture/parsing-and-source-anchors.md),
 [managed Docling supervisor](docs/architecture/docling-supervisor.md),
 [Docling conversion and complex-format anchors](docs/architecture/docling-conversion.md),
+[chunking and lexical search](docs/architecture/chunking-and-lexical-search.md),
 [Windows validation debt](docs/platform/windows-validation.md), and
 [macOS validation debt](docs/platform/macos-validation.md) for the current implementation status.

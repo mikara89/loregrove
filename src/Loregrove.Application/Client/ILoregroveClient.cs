@@ -1,5 +1,6 @@
 using Loregrove.Application.Library;
 using Loregrove.Application.Platform;
+using Loregrove.Application.Search;
 using Loregrove.Domain.Sources;
 
 namespace Loregrove.Application.Client;
@@ -40,7 +41,10 @@ public interface ILibraryClient : IApplicationAreaClient
         CancellationToken cancellationToken);
 }
 
-public interface ISearchClient : IApplicationAreaClient;
+public interface ISearchClient : IApplicationAreaClient
+{
+    Task<LexicalSearchPage> SearchAsync(LexicalSearchQuery query, CancellationToken cancellationToken);
+}
 
 public interface IKnowledgeClient : IApplicationAreaClient;
 

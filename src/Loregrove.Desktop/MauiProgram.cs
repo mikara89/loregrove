@@ -8,6 +8,7 @@ using Loregrove.Infrastructure.Desktop;
 using Loregrove.Infrastructure.Docling;
 using Loregrove.Infrastructure.LocalFiles;
 using Loregrove.Infrastructure.Sqlite;
+using Loregrove.Infrastructure.Search;
 using Microsoft.Extensions.Logging;
 using Microsoft.FluentUI.AspNetCore.Components;
 
@@ -54,6 +55,7 @@ public static class MauiProgram
         builder.Services.AddSingleton<IObjectStore, LocalObjectStore>();
         builder.Services.AddSingleton<IArtifactStore, LocalArtifactStore>();
         builder.Services.AddLoregroveSqlite(libraryPaths.Database);
+        builder.Services.AddLoregroveSearch();
 
 #if DEBUG
         builder.Services.AddBlazorWebViewDeveloperTools();

@@ -14,7 +14,7 @@ public sealed class DependencyRulesTests
         { "Loregrove.UI", ["Loregrove.Application"] },
         { "Loregrove.Infrastructure.Sqlite", ["Loregrove.Application"] },
         { "Loregrove.Infrastructure.LocalFiles", ["Loregrove.Application"] },
-        { "Loregrove.Infrastructure.Search", ["Loregrove.Application"] },
+        { "Loregrove.Infrastructure.Search", ["Loregrove.Application", "Loregrove.Infrastructure.Sqlite"] },
         { "Loregrove.Infrastructure.AI", ["Loregrove.Application"] },
         { "Loregrove.Infrastructure.Docling", ["Loregrove.Application"] },
         { "Loregrove.Infrastructure.Desktop", ["Loregrove.Application"] },
@@ -71,6 +71,31 @@ public sealed class DependencyRulesTests
 
         Assert.Contains("Microsoft.EntityFrameworkCore", packages);
         Assert.DoesNotContain(packages, name => name.Contains("Sqlite", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void ApplicationHasNoSqliteFtsImplementation()
+    {
+        foreach (var token in new[] { "LexicalSearchFts", "bm25(", "snippet(" })
+        {
+            AssertSourceDoesNotContain("Loregrove.Application", token);
+        }
+    }
+
+    [Fact]
+    public void SearchInfrastructureHasNoPresentationOrAiDependency()
+    {
+        foreach (var token in new[]
+        {
+            "Loregrove.UI",
+            "Microsoft.Maui",
+            "Microsoft.FluentUI",
+            "IChatClient",
+            "IEmbeddingGenerator",
+        })
+        {
+            AssertSourceDoesNotContain("Loregrove.Infrastructure.Search", token);
+        }
     }
 
     [Fact]

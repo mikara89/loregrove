@@ -84,6 +84,36 @@ public sealed class ProcessingJob
         LastError = null;
     }
 
+    public void CompleteChunking(DateTimeOffset completedAt)
+    {
+        State = ProcessingJobState.Pending;
+        Stage = ProcessingStage.Embedding;
+        UpdatedAt = completedAt;
+        LastError = null;
+    }
+
+    public void FailChunking(DateTimeOffset failedAt, string error)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(error);
+        if (error.Length > 2000)
+        {
+            throw new ArgumentException("The processing error must not exceed 2000 characters.", nameof(error));
+        }
+
+        State = ProcessingJobState.Failed;
+        Stage = ProcessingStage.Chunking;
+        UpdatedAt = failedAt;
+        LastError = error;
+    }
+
+    public void ReturnChunkingToPending(DateTimeOffset updatedAt)
+    {
+        State = ProcessingJobState.Pending;
+        Stage = ProcessingStage.Chunking;
+        UpdatedAt = updatedAt;
+        LastError = null;
+    }
+
     public bool RecoverInterrupted(DateTimeOffset recoveredAt)
     {
         if (State != ProcessingJobState.Processing)

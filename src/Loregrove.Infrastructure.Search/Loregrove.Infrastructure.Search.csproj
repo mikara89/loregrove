@@ -6,5 +6,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Loregrove.Application\Loregrove.Application.csproj" />
+    <ProjectReference Include="..\Loregrove.Infrastructure.Sqlite\Loregrove.Infrastructure.Sqlite.csproj" />
   </ItemGroup>
 </Project>

@@ -1,3 +1,161 @@
 @page "/search"
+@implements IAsyncDisposable
+@inject ILoregroveClient Client
 
-<PlaceholderPage Title="Search" Description="Lexical and semantic search will be introduced in later milestones." />
+<FluentCard class="page-card search-card">
+    <section aria-labelledby="search-title">
+        <p class="eyebrow">Offline lexical retrieval</p>
+        <h1 id="search-title">Search</h1>
+        <p>Find source filenames, headings, and passages using the local library index.</p>
+    </section>
+
+    <FluentTextInput Label="Search your library"
+                     TextInputType="TextInputType.Search"
+                     Placeholder="Filename, heading, or source content"
+                     Immediate="true"
+                     ImmediateDelay="300"
+                     @bind-Value="_queryText"
+                     @bind-Value:after="QueryChangedAsync" />
+
+    @if (_error is not null)
+    {
+        <FluentMessageBar Title="Search could not be completed"
+                          Intent="MessageBarIntent.Error"
+                          AriaLive="AriaLive.Polite"
+                          AllowDismiss="false">
+            <ChildContent>@_error</ChildContent>
+            <ActionsTemplate>
+                <FluentButton @onclick="ReloadAsync">Try again</FluentButton>
+            </ActionsTemplate>
+        </FluentMessageBar>
+    }
+    else if (_loading)
+    {
+        <div class="message-state" role="status" aria-live="polite">
+            <FluentSpinner aria-label="Searching the local library" />
+            <span>Searching…</span>
+        </div>
+    }
+    else if (!_hasSearched)
+    {
+        <div class="search-empty-state">
+            <h2>Search your local evidence</h2>
+            <p>Search your library by filename, heading, or source content.</p>
+        </div>
+    }
+    else if (_page is { TotalCount: 0 })
+    {
+        <div class="search-empty-state" role="status">
+            <h2>No matching sources or passages</h2>
+            <p>Try a different filename, heading, or phrase.</p>
+        </div>
+    }
+    else if (_page is not null)
+    {
+        <p class="search-count"><strong>@ResultCountLabel</strong></p>
+        <ol class="search-results" start="@ResultStart">
+            @foreach (var result in _page.Items)
+            {
+                <li>
+                    <FluentCard class="search-result-card">
+                        <FluentStack Orientation="Orientation.Horizontal"
+                                     VerticalAlignment="VerticalAlignment.Center"
+                                     HorizontalGap="10"
+                                     Wrap="true">
+                            <FluentBadge Appearance="BadgeAppearance.Tint">
+                                @(result.Kind == SearchTargetKind.Source ? "Source" : "Passage")
+                            </FluentBadge>
+                            <strong>@result.SourceName</strong>
+                        </FluentStack>
+                        @if (!string.IsNullOrWhiteSpace(result.ContextText))
+                        {
+                            <p class="search-context">@result.ContextText</p>
+                        }
+                        <p class="search-snippet">@result.Snippet</p>
+                        <FluentAnchorButton Href="@($"/library/{result.SourceDocumentId.Value:D}")"
+                                            Appearance="ButtonAppearance.Subtle">
+                            Open source
+                        </FluentAnchorButton>
+                    </FluentCard>
+                </li>
+            }
+        </ol>
+
+        <nav class="pagination" aria-label="Search result pages">
+            <FluentButton Disabled="@(_page.Page <= 1)" @onclick="PreviousPageAsync">Previous</FluentButton>
+            <span>Page @_page.Page of @_page.TotalPages</span>
+            <FluentButton Disabled="@(_page.Page >= _page.TotalPages)" @onclick="NextPageAsync">Next</FluentButton>
+        </nav>
+    }
+</FluentCard>
+
+@code {
+    private readonly LatestRequestRunner<LexicalSearchPage> _requests = new();
+    private LexicalSearchPage? _page;
+    private string? _queryText = string.Empty;
+    private string? _error;
+    private bool _loading;
+    private bool _hasSearched;
+    private int _currentPage = 1;
+
+    private int ResultStart => ((_page?.Page ?? 1) - 1) * (_page?.PageSize ?? 25) + 1;
+
+    private string ResultCountLabel => _page?.TotalCount == 1 ? "1 result" : $"{_page?.TotalCount ?? 0} results";
+
+    private async Task QueryChangedAsync()
+    {
+        _currentPage = 1;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        var text = _queryText?.Trim() ?? string.Empty;
+        var query = new LexicalSearchQuery(text, _currentPage, 25);
+        await _requests.RunAsync(
+            cancellationToken => Client.Search.SearchAsync(query, cancellationToken),
+            page =>
+            {
+                _page = page;
+                _hasSearched = text.Length > 0;
+            },
+            () =>
+            {
+                _loading = true;
+                _error = null;
+            },
+            _ =>
+            {
+                _page = null;
+                _hasSearched = text.Length > 0;
+                _error = "Please try again. No source data was changed.";
+            },
+            () => _loading = false);
+    }
+
+    private async Task PreviousPageAsync()
+    {
+        if (_currentPage > 1)
+        {
+            _currentPage--;
+            await LoadAsync();
+        }
+    }
+
+    private async Task NextPageAsync()
+    {
+        if (_page is not null && _currentPage < _page.TotalPages)
+        {
+            _currentPage++;
+            await LoadAsync();
+        }
+    }
+
+    private Task ReloadAsync() => LoadAsync();
+
+    public ValueTask DisposeAsync()
+    {
+        _requests.Dispose();
+        return ValueTask.CompletedTask;
+    }
+}
